@@ -5,15 +5,17 @@
 # in --enhance mode, and returns the XML as additionalContext so Claude
 # sees the structured prompt before forming its response.
 #
-# Requirements:
-#   - better-prompter binary built at $CLAUDE_PROJECT_DIR/better-prompter
-#   - jq available on PATH
+# Install: go install github.com/better-prompter/better-prompter/cmd/better-prompter@latest
+# The binary lands at ~/go/bin/better-prompter (default GOPATH).
+#
+# Requirements: jq on PATH
 
 set -euo pipefail
 
-BINARY="${CLAUDE_PROJECT_DIR}/better-prompter"
+# Resolve binary: prefer PATH (works after go install), fall back to ~/go/bin.
+BINARY=$(command -v better-prompter 2>/dev/null || echo "$HOME/go/bin/better-prompter")
 
-# Bail silently if the binary isn't built yet.
+# Bail silently if not installed yet.
 if [ ! -x "$BINARY" ]; then
   exit 0
 fi
