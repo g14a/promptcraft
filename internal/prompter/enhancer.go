@@ -304,6 +304,8 @@ func buildConstraints(info promptInfo) []string {
 	case domainCode:
 		if info.isBuildTask {
 			return []string{
+				"State all assumptions about unspecified requirements upfront, before writing any code",
+				"List any external libraries, APIs, or services the implementation requires",
 				"Define clear interfaces and data structures before writing implementation code",
 				"Keep functions small and focused — each should do one thing well",
 				"Handle all error paths explicitly; never silently ignore errors",
@@ -311,19 +313,21 @@ func buildConstraints(info promptInfo) []string {
 			}
 		}
 		return []string{
+			"Think through the root cause before changing anything — state your hypothesis first",
 			"Make only the changes necessary to fulfill the request — do not refactor unrelated code",
 			"Preserve existing function signatures and public interfaces",
-			"Do not add comments or documentation to code you did not change",
+			"If the root cause cannot be determined from the available context, state what additional information is needed rather than guessing",
 		}
 	case domainCreative:
 		return []string{
-			"Match tone and voice to the intended audience",
+			"Match tone and voice to the intended audience; if unspecified, state the assumed audience",
 			`Avoid generic openings and filler phrases ("In today's world...", "Certainly!")`,
 		}
 	case domainAnalysis:
 		return []string{
-			"Ground your response in concrete examples — avoid vague generalities",
-			"Acknowledge relevant trade-offs or caveats where they exist",
+			"Support each claim with a specific example, data point, or evidence — avoid vague generalities",
+			"If a claim cannot be supported with available evidence, omit it or flag it explicitly as uncertain",
+			"Acknowledge relevant trade-offs, caveats, or limitations where they exist",
 		}
 	default:
 		return nil
@@ -397,16 +401,17 @@ func writeInstructions(b *strings.Builder, info promptInfo) {
 		fmt.Fprintf(b, "%s\n\n", info.original)
 		if info.isBuildTask {
 			b.WriteString("Approach:\n")
-			b.WriteString("1. Clarify requirements and identify the core data structures and interfaces needed\n")
-			b.WriteString("2. Design the solution architecture before writing any code\n")
-			b.WriteString("3. Implement each component with clear separation of concerns\n")
-			b.WriteString("4. Handle errors explicitly and cover edge cases throughout")
+			b.WriteString("1. Before writing any code: identify ambiguities, missing requirements, and external dependencies — state them explicitly\n")
+			b.WriteString("2. Define core data structures and interfaces\n")
+			b.WriteString("3. Design the solution architecture\n")
+			b.WriteString("4. Implement each component with clear separation of concerns\n")
+			b.WriteString("5. Handle errors explicitly and cover edge cases throughout")
 		} else {
 			b.WriteString("Approach:\n")
-			b.WriteString("1. Read and understand the relevant code before making any changes\n")
-			b.WriteString("2. Identify the root cause or exact requirement\n")
-			b.WriteString("3. Implement the minimal, correct solution\n")
-			b.WriteString("4. Verify that edge cases are handled correctly")
+			b.WriteString("1. Think through the problem first — state your hypothesis about the root cause before touching any code\n")
+			b.WriteString("2. Read and understand the relevant code\n")
+			b.WriteString("3. Confirm the root cause, then implement the minimal correct fix\n")
+			b.WriteString("4. Verify edge cases are handled and no regressions introduced")
 		}
 
 	case domainCreative:
@@ -421,8 +426,9 @@ func writeInstructions(b *strings.Builder, info promptInfo) {
 		fmt.Fprintf(b, "%s\n\n", info.original)
 		b.WriteString("Structure your response to:\n")
 		b.WriteString("1. State the key answer or conclusion directly upfront\n")
-		b.WriteString("2. Support each point with a concrete example or evidence\n")
-		b.WriteString("3. Acknowledge important nuances, trade-offs, or caveats")
+		b.WriteString("2. Support each point with a specific example, data point, or evidence\n")
+		b.WriteString("3. For any claim you cannot support with evidence, omit it or flag it as uncertain\n")
+		b.WriteString("4. Acknowledge important nuances, trade-offs, or caveats")
 
 	default:
 		b.WriteString(info.original)
@@ -436,17 +442,17 @@ func inferOutputFormat(info promptInfo) string {
 	switch info.domain {
 	case domainCode:
 		if info.isBuildTask {
-			return "Explain your design decisions briefly, then provide the complete, working implementation."
+			return "State any assumptions and external dependencies first. Explain key design decisions briefly, then provide the complete, working implementation. After the code, confirm it satisfies all stated requirements."
 		}
-		return "Explain the root cause briefly, then show the complete, corrected code."
+		return "State the root cause and your reasoning. Show the complete, corrected code. Confirm the fix addresses the original issue and list any edge cases verified."
 	case domainCreative:
 		return "Write in flowing prose. Prioritize clarity and engagement over length."
 	case domainAnalysis:
 		if info.isQuestion {
-			return "Answer in clear prose. Use at least one concrete example to ground the explanation."
+			return "Answer directly and concisely. Use at least one specific example or evidence to ground each key point. If any part of the answer is uncertain, say so explicitly."
 		}
-		return "Use structured prose. Include a brief summary at the end."
+		return "Use structured prose with evidence for each point. Include a brief summary at the end. Note any areas where information is limited or confidence is low."
 	default:
-		return "Be concise and direct. Omit preamble."
+		return "Be concise and direct. Omit preamble. If any aspect of the request is unclear, state your assumption before proceeding."
 	}
 }

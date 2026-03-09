@@ -114,26 +114,28 @@ func TestBuildConstraints(t *testing.T) {
 		mustContain string // one required keyword in any constraint
 	}{
 		{
-			name:        "code build task: 4 constraints with interface guidance",
+			name:        "code build: 6 constraints including assumption + dependency guidance",
 			info:        promptInfo{domain: domainCode, isBuildTask: true},
-			wantN:       4,
-			mustContain: "interface",
+			wantN:       6,
+			mustContain: "assumptions",
 		},
 		{
-			name:        "code modify task: 3 constraints with minimal-change guidance",
+			name:        "code modify: 4 constraints including root-cause hypothesis",
 			info:        promptInfo{domain: domainCode, isBuildTask: false},
+			wantN:       4,
+			mustContain: "root cause",
+		},
+		{
+			name:        "creative: 2 constraints",
+			info:        promptInfo{domain: domainCreative},
+			wantN:       2,
+			mustContain: "audience",
+		},
+		{
+			name:        "analysis: 3 constraints including evidence requirement",
+			info:        promptInfo{domain: domainAnalysis},
 			wantN:       3,
-			mustContain: "refactor",
-		},
-		{
-			name:  "creative: 2 constraints",
-			info:  promptInfo{domain: domainCreative},
-			wantN: 2,
-		},
-		{
-			name:  "analysis: 2 constraints",
-			info:  promptInfo{domain: domainAnalysis},
-			wantN: 2,
+			mustContain: "evidence",
 		},
 		{
 			name:  "general: no constraints",
@@ -243,12 +245,16 @@ func TestInferOutputFormat(t *testing.T) {
 		wantContain string
 	}{
 		{"explicit json hint", promptInfo{outputHint: "Return valid, properly indented JSON."}, "JSON"},
-		{"code build: design decisions", promptInfo{domain: domainCode, isBuildTask: true}, "design"},
+		{"code build: assumptions + design", promptInfo{domain: domainCode, isBuildTask: true}, "assumptions"},
+		{"code build: verify requirements", promptInfo{domain: domainCode, isBuildTask: true}, "requirements"},
 		{"code modify: root cause", promptInfo{domain: domainCode, isBuildTask: false}, "root cause"},
+		{"code modify: confirm fix", promptInfo{domain: domainCode, isBuildTask: false}, "confirm"},
 		{"creative default", promptInfo{domain: domainCreative}, "prose"},
-		{"analysis question default", promptInfo{domain: domainAnalysis, isQuestion: true}, "example"},
-		{"analysis non-question default", promptInfo{domain: domainAnalysis, isQuestion: false}, "summary"},
-		{"general default", promptInfo{domain: domainGeneral}, "concise"},
+		{"analysis question: evidence", promptInfo{domain: domainAnalysis, isQuestion: true}, "evidence"},
+		{"analysis question: uncertainty", promptInfo{domain: domainAnalysis, isQuestion: true}, "uncertain"},
+		{"analysis non-question: summary", promptInfo{domain: domainAnalysis, isQuestion: false}, "summary"},
+		{"analysis non-question: confidence", promptInfo{domain: domainAnalysis, isQuestion: false}, "confidence"},
+		{"general: assumption note", promptInfo{domain: domainGeneral}, "assumption"},
 	}
 
 	for _, tt := range tests {
@@ -278,24 +284,24 @@ func TestRender(t *testing.T) {
 		mustNot  []string
 	}{
 		{
-			name: "code modify: all sections + root-cause framing",
+			name: "code modify: root-cause chain-of-thought framing",
 			info: promptInfo{
 				domain:      domainCode,
 				isBuildTask: false,
 				original:    "fix the auth bug",
 				constraints: buildConstraints(promptInfo{domain: domainCode, isBuildTask: false}),
 			},
-			mustHave: []string{"<role>", "<instructions>", "<constraints>", "<output_format>", "root cause"},
+			mustHave: []string{"<role>", "<instructions>", "<constraints>", "<output_format>", "root cause", "hypothesis"},
 		},
 		{
-			name: "code build: design framing",
+			name: "code build: assumption + architecture framing",
 			info: promptInfo{
 				domain:      domainCode,
 				isBuildTask: true,
 				original:    "implement a rate limiter",
 				constraints: buildConstraints(promptInfo{domain: domainCode, isBuildTask: true}),
 			},
-			mustHave: []string{"<role>", "Design", "Clarify requirements", "<output_format>", "design decisions"},
+			mustHave: []string{"<role>", "ambiguities", "assumptions", "<output_format>", "requirements"},
 		},
 		{
 			name: "general domain omits role and constraints",
