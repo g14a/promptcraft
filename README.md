@@ -1,4 +1,4 @@
-# better-prompter
+# promptcraft
 
 **A zero-API-call MCP server that transforms raw natural language prompts into structured XML prompts following Claude's best practices.**
 
@@ -8,7 +8,7 @@ No LLM calls. No network requests. Pure local NLP using POS tagging and lexicon 
 
 ## What It Does
 
-`better-prompter` receives a raw user prompt, runs it through a rule-based NLP pipeline, and returns a structured XML prompt. The XML output is designed to be injected as context before Claude processes the original message — improving specificity, adding role framing, domain constraints, and output format guidance without modifying the user's actual request.
+`promptcraft` receives a raw user prompt, runs it through a rule-based NLP pipeline, and returns a structured XML prompt. The XML output is designed to be injected as context before Claude processes the original message — improving specificity, adding role framing, domain constraints, and output format guidance without modifying the user's actual request.
 
 **Input:**
 ```
@@ -300,9 +300,9 @@ Runs as a stdio MCP server. Any MCP-compatible client can use the `enhance_promp
 ```json
 {
   "mcpServers": {
-    "better-prompter": {
+    "promptcraft": {
       "type": "stdio",
-      "command": "/Users/YOUR_USER/go/bin/better-prompter"
+      "command": "/Users/YOUR_USER/go/bin/promptcraft"
     }
   }
 }
@@ -310,12 +310,12 @@ Runs as a stdio MCP server. Any MCP-compatible client can use the `enhance_promp
 
 Once registered, call it via the tool in any session:
 ```
-Use the better-prompter MCP to enhance this prompt: "Refactor the auth middleware to use JWT"
+Use the promptcraft MCP to enhance this prompt: "Refactor the auth middleware to use JWT"
 ```
 
 ### 2. Claude Code Hook (automatic enhancement)
 
-The repo ships with a `UserPromptSubmit` hook that automatically pipes every prompt through `better-prompter --enhance` before Claude processes it. The structured XML is injected as `additionalContext`.
+The repo ships with a `UserPromptSubmit` hook that automatically pipes every prompt through `promptcraft --enhance` before Claude processes it. The structured XML is injected as `additionalContext`.
 
 **`.claude/settings.json`** (project-level):
 ```json
@@ -343,7 +343,7 @@ For **global** (all projects), copy the hook to `~/.claude/hooks/` and register 
 ### 3. Single-shot CLI
 
 ```bash
-echo "Fix the off-by-one error in the pagination logic" | better-prompter --enhance
+echo "Fix the off-by-one error in the pagination logic" | promptcraft --enhance
 ```
 
 Reads prompt from stdin, writes XML to stdout. Exits immediately. Useful for shell scripts or editor integrations.
@@ -356,16 +356,16 @@ Reads prompt from stdin, writes XML to stdout. Exits immediately. Useful for she
 
 ```bash
 # Install binary to $GOPATH/bin (typically ~/go/bin)
-go install github.com/better-prompter/better-prompter/cmd/better-prompter@latest
+go install github.com/promptcraft/promptcraft/cmd/promptcraft@latest
 
 # Verify
-better-prompter --enhance <<< "Write a Go HTTP middleware for rate limiting"
+promptcraft --enhance <<< "Write a Go HTTP middleware for rate limiting"
 ```
 
 **From source:**
 ```bash
-git clone https://github.com/better-prompter/better-prompter
-cd better-prompter
+git clone https://github.com/promptcraft/promptcraft
+cd promptcraft
 make install   # go install with version ldflags
 make test      # go test -race ./...
 make smoke     # quick MCP initialize round-trip test
@@ -376,9 +376,9 @@ make smoke     # quick MCP initialize round-trip test
 ## Project Structure
 
 ```
-better-prompter/
+promptcraft/
 ├── cmd/
-│   └── better-prompter/
+│   └── promptcraft/
 │       └── main.go              # Entry point: MCP server or --enhance CLI
 ├── internal/
 │   ├── mcp/
@@ -422,7 +422,7 @@ This is a rule-based system. It is fast, private, and free to run, but it cannot
 - Detect ethical constraints beyond the configured keyword sets
 - Adapt to novel prompt structures not covered by the lexicons
 
-For comparison: Anthropic's Workbench prompt generator uses a Claude model call to produce semantically aware enhancements. `better-prompter` achieves roughly 40-50% of that quality using only local NLP, with zero API cost and sub-50ms latency.
+For comparison: Anthropic's Workbench prompt generator uses a Claude model call to produce semantically aware enhancements. `promptcraft` achieves roughly 40-50% of that quality using only local NLP, with zero API cost and sub-50ms latency.
 
 ---
 
