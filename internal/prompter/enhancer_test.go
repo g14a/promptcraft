@@ -255,11 +255,11 @@ func TestInferOutputFormat(t *testing.T) {
 		{"code build: verify requirements", promptInfo{domain: domainCode, isBuildTask: true}, "requirements"},
 		{"code modify: root cause", promptInfo{domain: domainCode, isBuildTask: false}, "root cause"},
 		{"code modify: confirm fix", promptInfo{domain: domainCode, isBuildTask: false}, "confirm"},
-		{"creative default", promptInfo{domain: domainCreative}, "flowing_content"},
-		{"analysis question: evidence", promptInfo{domain: domainAnalysis, isQuestion: true}, "evidence"},
+		{"creative default", promptInfo{domain: domainCreative}, "flowing prose"},
+		{"analysis question: evidence", promptInfo{domain: domainAnalysis, isQuestion: true}, "specific examples"},
 		{"analysis question: uncertainty", promptInfo{domain: domainAnalysis, isQuestion: true}, "uncertain"},
 		{"analysis non-question: summary", promptInfo{domain: domainAnalysis, isQuestion: false}, "summary"},
-		{"analysis non-question: key findings", promptInfo{domain: domainAnalysis, isQuestion: false}, "key_findings"},
+		{"analysis non-question: structured prose", promptInfo{domain: domainAnalysis, isQuestion: false}, "structured prose"},
 		{"general: assumption note", promptInfo{domain: domainGeneral}, "assumption"},
 	}
 

@@ -21,6 +21,7 @@ func New() *Enhancer { return &Enhancer{} }
 // avoids adding token overhead for already-structured inputs.
 const maxEnhanceWords = 300
 
+
 // Enhance transforms prompt into a well-structured XML prompt.
 // intent is optional context about the underlying goal.
 // targetModel is accepted for interface compatibility but has no effect.
@@ -129,18 +130,18 @@ var (
 
 	// Output format keywords → instruction text.
 	outputHints = map[string]string{
-		"json":     "Return valid, properly indented JSON matching the requested structure.",
-		"xml":      "Return well-formed XML with clear element names and proper nesting.",
-		"yaml":     "Return valid YAML with consistent indentation.",
-		"csv":      "Return CSV with a header row and one record per line.",
-		"table":    "Present results in a formatted table with clear column headers.",
-		"markdown": "Format the response in Markdown with appropriate headings and structure.",
-		"bullet":   "Use concise bullet points with clear, actionable items.",
-		"list":     "Use a numbered list with logical sequencing.",
-		"schema":   "Define a clear JSON schema for the requested data structure.",
-		"extract":  "Extract the requested information in structured format with labeled fields.",
-		"classify": "Provide classification results with confidence levels and reasoning.",
-		"summary":  "Structure the summary with distinct sections and key takeaways.",
+		"json":     outputFormatJSON,
+		"xml":      outputFormatXML,
+		"yaml":     outputFormatYAML,
+		"csv":      outputFormatCSV,
+		"table":    outputFormatTable,
+		"markdown": outputFormatMarkdown,
+		"bullet":   outputFormatBullet,
+		"list":     outputFormatList,
+		"schema":   outputFormatSchema,
+		"extract":  outputFormatExtract,
+		"classify": outputFormatClassify,
+		"summary":  outputFormatSummary,
 	}
 
 	// Structured output indicators - suggest Claude API structured outputs
@@ -369,18 +370,101 @@ func detectBuildTask(verbs, all []string) bool {
 
 func buildConstraints(info promptInfo) []string {
 	baseConstraints := getBaseConstraints(info)
+	entityConstraints := getEntitySpecificConstraints(info.entities)
 
 	// Add structured output guidance if needed
 	if info.needsStructuredOutput {
 		structuredConstraints := []string{
-			"Use consistent field names and data types throughout your response",
-			"Provide complete data for all requested fields when information is available",
-			"Use clear, descriptive labels for any categories or classifications",
+			constraintStructuredFields,
+			constraintStructuredData,
+			constraintStructuredLabels,
 		}
-		return append(structuredConstraints, baseConstraints...)
+		return append(append(structuredConstraints, entityConstraints...), baseConstraints...)
 	}
 
-	return baseConstraints
+	return append(entityConstraints, baseConstraints...)
+}
+
+func getEntitySpecificConstraints(entities []string) []string {
+	var constraints []string
+	seenConstraints := make(map[string]bool)
+
+	for _, entity := range entities {
+		lower := strings.ToLower(entity)
+
+		// Financial domain constraints
+		if isFinancialEntity(lower) && !seenConstraints["financial"] {
+			constraints = append(constraints, constraintFinancial)
+			seenConstraints["financial"] = true
+		}
+
+		// Medical/health domain constraints
+		if isMedicalEntity(lower) && !seenConstraints["medical"] {
+			constraints = append(constraints, constraintMedical)
+			seenConstraints["medical"] = true
+		}
+
+		// Social media/platform constraints
+		if isSocialMediaEntity(lower) && !seenConstraints["social"] {
+			constraints = append(constraints, constraintSocialMedia)
+			seenConstraints["social"] = true
+		}
+
+		// Cloud platform constraints
+		if isCloudPlatformEntity(lower) && !seenConstraints["cloud"] {
+			constraints = append(constraints, constraintCloudPlatform)
+			seenConstraints["cloud"] = true
+		}
+	}
+
+	return constraints
+}
+
+func isFinancialEntity(entity string) bool {
+	financialKeywords := []string{
+		"stock", "ticker", "nasdaq", "nyse", "nse", "bse",
+		"financial", "trading", "broker", "exchange",
+		"zerodha", "robinhood", "fidelity", "schwab",
+		"bloomberg", "reuters", "yahoo finance", "alpha vantage",
+		"economic times", "wall street", "market",
+	}
+	return containsAnyKeyword(entity, financialKeywords)
+}
+
+func isMedicalEntity(entity string) bool {
+	medicalKeywords := []string{
+		"patient", "medical", "health", "hospital", "clinic",
+		"hipaa", "phi", "diagnosis", "treatment", "prescription",
+		"fda", "ehr", "emr", "healthcare", "medicine",
+	}
+	return containsAnyKeyword(entity, medicalKeywords)
+}
+
+func isSocialMediaEntity(entity string) bool {
+	socialKeywords := []string{
+		"twitter", "facebook", "instagram", "linkedin", "tiktok",
+		"youtube", "reddit", "discord", "slack", "telegram",
+		"social media", "post", "tweet", "message",
+	}
+	return containsAnyKeyword(entity, socialKeywords)
+}
+
+func isCloudPlatformEntity(entity string) bool {
+	cloudKeywords := []string{
+		"aws", "azure", "gcp", "google cloud", "amazon",
+		"ec2", "s3", "lambda", "kubernetes", "docker",
+		"cloud", "serverless", "api gateway",
+	}
+	return containsAnyKeyword(entity, cloudKeywords)
+}
+
+func containsAnyKeyword(text string, keywords []string) bool {
+	for _, keyword := range keywords {
+		if strings.Contains(text, keyword) {
+			return true
+		}
+	}
+	return false
 }
 
 func getBaseConstraints(info promptInfo) []string {
@@ -388,31 +472,31 @@ func getBaseConstraints(info promptInfo) []string {
 	case domainCode:
 		if info.isBuildTask {
 			return []string{
-				"State all assumptions about unspecified requirements upfront, before writing code",
-				"List the external libraries, APIs, or services the implementation will use",
-				"Define clear interfaces and data structures before implementation details",
-				"Write focused functions that accomplish one specific task well",
-				"Handle error conditions explicitly with appropriate error messages",
-				"Provide complete, working code without placeholder TODOs or incomplete sections",
+				constraintCodeAssumptions,
+				constraintCodeDependencies,
+				constraintCodeInterfaces,
+				constraintCodeFunctions,
+				constraintCodeErrors,
+				constraintCodeComplete,
 			}
 		}
 		return []string{
-			"State your hypothesis about the root cause before making changes",
-			"Focus changes on addressing the specific issue described in the request",
-			"Preserve existing function signatures and public interfaces unless modification is required",
-			"Request additional context when the root cause cannot be determined from available information",
+			constraintModifyHypothesis,
+			constraintModifyFocus,
+			constraintModifyInterfaces,
+			constraintModifyContext,
 		}
 	case domainCreative:
 		return []string{
-			"Match tone and voice to the intended audience; state your assumed audience if unspecified",
-			"Use engaging openings that draw the reader in immediately",
-			"Develop each point with specific, concrete details and examples",
+			constraintCreativeAudience,
+			constraintCreativeOpenings,
+			constraintCreativeDetails,
 		}
 	case domainAnalysis:
 		return []string{
-			"Support each claim with specific examples, data points, or concrete evidence",
-			"Flag any claims as uncertain when supporting evidence is limited or unavailable",
-			"Acknowledge relevant trade-offs, caveats, or limitations where they apply to your analysis",
+			constraintAnalysisEvidence,
+			constraintAnalysisUncertainty,
+			constraintAnalysisLimitations,
 		}
 	default:
 		return nil
@@ -462,22 +546,85 @@ func render(info promptInfo) string {
 }
 
 func inferRole(info promptInfo) string {
+	// Check for verb-specific specialized roles first
+	if specializedRole := getSpecializedRole(info.original, info.mainVerb, info.entities, info.domain); specializedRole != "" {
+		return specializedRole
+	}
+
+	// Fallback to domain-based roles
 	switch info.domain {
 	case domainCode:
 		if info.isBuildTask {
-			return "Expert software engineer. Design and implement correct, idiomatic, production-quality code from scratch."
+			if info.isMultiStep {
+				return roleCodeArchitect
+			}
+			return roleCodeBuild
 		}
-		return "Expert software engineer. Diagnose and fix issues precisely with minimal, targeted changes."
+		return roleCodeModify
 	case domainCreative:
-		return "Skilled writer with expertise in crafting clear, engaging, audience-appropriate content."
+		return roleCreative
 	case domainAnalysis:
 		if info.isQuestion {
 			return "" // no persona needed for direct explanatory questions
 		}
-		return "Expert analyst. Provide precise, well-reasoned assessments backed by concrete examples."
+		return roleAnalysis
 	default:
 		return ""
 	}
+}
+
+func getSpecializedRole(prompt, mainVerb string, entities []string, domain domain) string {
+	if domain != domainCode {
+		return "" // Only specialized roles for code domain initially
+	}
+
+	lower := strings.ToLower(prompt)
+
+	// Verb-specific specialized roles
+	switch mainVerb {
+	case "debug", "troubleshoot":
+		return roleDebugSpecialist
+	case "optimize", "performance":
+		return rolePerformanceExpert
+	case "migrate", "convert":
+		return roleMigrationSpecialist
+	case "deploy", "infrastructure":
+		return roleDevOpsEngineer
+	case "test", "testing":
+		return roleQAEngineer
+	case "authenticate", "authorize":
+		return roleSecurityEngineer
+	}
+
+	// Check prompt for specialized contexts
+	if containsAnyKeyword(lower, []string{"scrape", "scraper", "crawl", "crawler"}) {
+		return roleScrapingSpecialist
+	}
+	if containsAnyKeyword(lower, []string{"api", "rest", "graphql", "endpoint"}) {
+		return roleAPIArchitect
+	}
+	if containsAnyKeyword(lower, []string{"database", "sql", "nosql", "migration", "schema"}) {
+		return roleDatabaseEngineer
+	}
+	if containsAnyKeyword(lower, []string{"microservice", "distributed", "kubernetes", "docker"}) {
+		return roleDistributedSystems
+	}
+
+	// Entity-specific role specialization
+	for _, entity := range entities {
+		entityLower := strings.ToLower(entity)
+		if isFinancialEntity(entityLower) {
+			return roleFintechEngineer
+		}
+		if isMedicalEntity(entityLower) {
+			return roleHealthcareEngineer
+		}
+		if isCloudPlatformEntity(entityLower) {
+			return roleCloudArchitect
+		}
+	}
+
+	return ""
 }
 
 func writeInstructions(b *strings.Builder, info promptInfo) {
@@ -520,29 +667,101 @@ func inferOutputFormat(info promptInfo) string {
 	// Structured output suggestions for Claude API features
 	if info.needsStructuredOutput {
 		if info.outputHint != "" {
-			return info.outputHint + " Consider using Claude API structured outputs (output_config.format) for guaranteed schema compliance."
+			return info.outputHint + " " + structuredOutputAPIHint
 		}
-		return "Structure your response with clear, labeled sections. For JSON/schema requirements, consider using Claude API structured outputs (output_config.format) to guarantee valid formatting."
+		return structuredOutputHint
 	}
 
 	if info.outputHint != "" {
 		return info.outputHint
 	}
 
+	baseFormat := getBaseOutputFormat(info)
+	verbSpecific := getVerbSpecificGuidance(info.original, info.mainVerb, info.domain)
+
+	if verbSpecific != "" {
+		return verbSpecific + " " + baseFormat
+	}
+	return baseFormat
+}
+
+func getVerbSpecificGuidance(prompt, mainVerb string, domain domain) string {
+	if domain != domainCode {
+		return "" // Only add verb-specific guidance for code domain initially
+	}
+
+	// Check mainVerb first, then check prompt for verb keywords as fallback
+	verbToCheck := mainVerb
+	if verbToCheck == "" {
+		verbToCheck = extractVerbFromPrompt(prompt)
+	}
+
+	switch verbToCheck {
+	case "scrape", "crawl":
+		return verbGuidanceScrape
+	case "debug", "troubleshoot":
+		return verbGuidanceDebug
+	case "optimize", "performance":
+		return verbGuidanceOptimize
+	case "migrate", "convert":
+		return verbGuidanceMigrate
+	case "deploy", "infrastructure":
+		return verbGuidanceDeploy
+	case "test", "testing":
+		return verbGuidanceTest
+	case "authenticate", "authorize":
+		return verbGuidanceAuth
+	}
+	return ""
+}
+
+func extractVerbFromPrompt(prompt string) string {
+	lower := strings.ToLower(prompt)
+	words := strings.Fields(lower)
+
+	// Check first few words for key verbs (handles mis-tagged imperatives)
+	verbMap := map[string]string{
+		"scrape": "scrape", "crawl": "crawl", "debug": "debug", "troubleshoot": "troubleshoot",
+		"optimize": "optimize", "migrate": "migrate", "convert": "convert",
+		"deploy": "deploy", "test": "test", "authenticate": "authenticate", "authorize": "authorize",
+	}
+
+	for _, word := range words[:min(3, len(words))] { // check first 3 words
+		if verb, ok := verbMap[word]; ok {
+			return verb
+		}
+	}
+	return ""
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func getBaseOutputFormat(info promptInfo) string {
 	switch info.domain {
 	case domainCode:
 		if info.isBuildTask {
-			return "Organize your response in <implementation_plan>, <code>, and <verification> sections. State assumptions and dependencies first, explain key design decisions, provide complete working code, then confirm requirements are met."
+			if info.isMultiStep {
+				return outputFormatCodeBuildMulti
+			}
+			return outputFormatCodeBuild
 		}
-		return "Structure your response in <root_cause_analysis>, <solution>, and <verification> sections. State your hypothesis about the root cause, show the corrected code, then confirm the fix addresses the issue."
+		if info.isMultiStep {
+			return outputFormatCodeModifyMulti
+		}
+		return outputFormatCodeModify
 	case domainCreative:
-		return "Write in <flowing_content> sections with clear narrative structure. Prioritize clarity and engagement. Use compelling openings and strong conclusions."
+		return outputFormatCreative
 	case domainAnalysis:
 		if info.isQuestion {
-			return "Provide <direct_answer> followed by <supporting_evidence>. Use specific examples to ground each key point. Flag any uncertain claims explicitly."
+			return outputFormatAnalysisQuestion
 		}
-		return "Structure your analysis in <key_findings>, <evidence>, and <summary> sections. Support each claim with concrete examples. Note areas where information is limited."
+		return outputFormatAnalysisGeneral
 	default:
-		return "Be concise and direct in clearly labeled sections. State any assumptions upfront before proceeding with your response."
+		return outputFormatGeneral
 	}
 }
