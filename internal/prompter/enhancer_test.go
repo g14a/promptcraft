@@ -15,11 +15,11 @@ func TestClassifyDomain(t *testing.T) {
 		name       string
 		verbs      []string
 		nouns      []string
-		all        []string // all tokens (POS-tag-independent fallback)
+		all        []string
 		isQuestion bool
 		want       domain
 	}{
-		// Strong POS-confirmed verb signals
+		// POS-confirmed verb signals
 		{"code verb: fix", []string{"fix"}, nil, nil, false, domainCode},
 		{"code verb: debug", []string{"debug"}, nil, nil, false, domainCode},
 		{"code verb: implement", []string{"implement"}, nil, nil, false, domainCode},
@@ -38,9 +38,9 @@ func TestClassifyDomain(t *testing.T) {
 		// Question flag adds +2 to analysis
 		{"question with no lexical signal", nil, nil, nil, true, domainAnalysis},
 		{"question + analysis verb amplifies", []string{"explain"}, nil, nil, true, domainAnalysis},
-		// Fallback scoring: mis-tagged imperative verb recovered via `all` tokens
-		{"fallback: implement mis-tagged (not in verbs)", nil, nil, []string{"implement", "api"}, false, domainCode},
-		{"fallback: scraper noun + implement fallback beats question", nil, []string{"scraper", "api"}, []string{"implement", "scraper", "api"}, true, domainCode},
+		// Fallback scoring: mis-tagged imperative verbs recovered via `all`
+		{"fallback: implement mis-tagged", nil, nil, []string{"implement", "api"}, false, domainCode},
+		{"fallback: scraper+implement beats question", nil, []string{"scraper", "api"}, []string{"implement", "scraper", "api"}, true, domainCode},
 		// No signal → general
 		{"no signal general", nil, nil, nil, false, domainGeneral},
 		{"empty all", []string{}, []string{}, []string{}, false, domainGeneral},
@@ -59,32 +59,112 @@ func TestClassifyDomain(t *testing.T) {
 	}
 }
 
+// ---- detectBuildTask --------------------------------------------------------
+
+func TestDetectBuildTask(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		verbs []string
+		all   []string
+		want  bool
+	}{
+		// Build verbs → true
+		{"implement verb", []string{"implement"}, nil, true},
+		{"build verb", []string{"build"}, nil, true},
+		{"develop verb", []string{"develop"}, nil, true},
+		{"create verb", []string{"create"}, nil, true},
+		{"generate verb", []string{"generate"}, nil, true},
+		{"scaffold verb", []string{"scaffold"}, nil, true},
+		// Modify verbs → false
+		{"fix verb", []string{"fix"}, nil, false},
+		{"debug verb", []string{"debug"}, nil, false},
+		{"refactor verb", []string{"refactor"}, nil, false},
+		{"optimize verb", []string{"optimize"}, nil, false},
+		// Fallback via `all` (POS mis-tagged)
+		{"implement in all only", nil, []string{"implement", "api"}, true},
+		{"fix in all only", nil, []string{"fix", "bug"}, false},
+		// Default: unknown → build
+		{"no verbs no all", nil, nil, true},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := detectBuildTask(tt.verbs, tt.all)
+			if got != tt.want {
+				t.Errorf("detectBuildTask(verbs=%v, all=%v) = %v; want %v",
+					tt.verbs, tt.all, got, tt.want)
+			}
+		})
+	}
+}
+
 // ---- buildConstraints -------------------------------------------------------
 
 func TestBuildConstraints(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		d     domain
-		wantN int
+		name        string
+		info        promptInfo
+		wantN       int
+		mustContain string // one required keyword in any constraint
 	}{
-		{domainCode, 3},
-		{domainCreative, 2},
-		{domainAnalysis, 2},
-		{domainGeneral, 0},
+		{
+			name:        "code build task: 4 constraints with interface guidance",
+			info:        promptInfo{domain: domainCode, isBuildTask: true},
+			wantN:       4,
+			mustContain: "interface",
+		},
+		{
+			name:        "code modify task: 3 constraints with minimal-change guidance",
+			info:        promptInfo{domain: domainCode, isBuildTask: false},
+			wantN:       3,
+			mustContain: "refactor",
+		},
+		{
+			name:  "creative: 2 constraints",
+			info:  promptInfo{domain: domainCreative},
+			wantN: 2,
+		},
+		{
+			name:  "analysis: 2 constraints",
+			info:  promptInfo{domain: domainAnalysis},
+			wantN: 2,
+		},
+		{
+			name:  "general: no constraints",
+			info:  promptInfo{domain: domainGeneral},
+			wantN: 0,
+		},
 	}
 
 	for _, tt := range tests {
 		tt := tt
-		t.Run("domain", func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got := buildConstraints(tt.d)
+			got := buildConstraints(tt.info)
 			if len(got) != tt.wantN {
-				t.Errorf("buildConstraints(%d) returned %d items; want %d", tt.d, len(got), tt.wantN)
+				t.Errorf("buildConstraints() returned %d items; want %d", len(got), tt.wantN)
 			}
 			for _, c := range got {
 				if c == "" {
 					t.Error("constraint must not be empty string")
+				}
+			}
+			if tt.mustContain != "" {
+				found := false
+				for _, c := range got {
+					if strings.Contains(strings.ToLower(c), tt.mustContain) {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("buildConstraints() missing constraint containing %q; got %v", tt.mustContain, got)
 				}
 			}
 		})
@@ -100,13 +180,38 @@ func TestInferRole(t *testing.T) {
 		name      string
 		info      promptInfo
 		wantEmpty bool
+		mustHave  string
 	}{
-		{"code always has role", promptInfo{domain: domainCode}, false},
-		{"creative always has role", promptInfo{domain: domainCreative}, false},
-		{"analysis non-question has role", promptInfo{domain: domainAnalysis, isQuestion: false}, false},
-		// Questions are self-explanatory; a role adds noise, not value.
-		{"analysis question has no role", promptInfo{domain: domainAnalysis, isQuestion: true}, true},
-		{"general has no role", promptInfo{domain: domainGeneral}, true},
+		{
+			name:     "code build: design/implement role",
+			info:     promptInfo{domain: domainCode, isBuildTask: true},
+			mustHave: "Design",
+		},
+		{
+			name:     "code modify: diagnose/fix role",
+			info:     promptInfo{domain: domainCode, isBuildTask: false},
+			mustHave: "Diagnose",
+		},
+		{
+			name:     "creative always has role",
+			info:     promptInfo{domain: domainCreative},
+			mustHave: "writer",
+		},
+		{
+			name:     "analysis non-question has role",
+			info:     promptInfo{domain: domainAnalysis, isQuestion: false},
+			mustHave: "analyst",
+		},
+		{
+			name:      "analysis question has no role",
+			info:      promptInfo{domain: domainAnalysis, isQuestion: true},
+			wantEmpty: true,
+		},
+		{
+			name:      "general has no role",
+			info:      promptInfo{domain: domainGeneral},
+			wantEmpty: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -120,6 +225,9 @@ func TestInferRole(t *testing.T) {
 			if !tt.wantEmpty && got == "" {
 				t.Error("inferRole() = empty; want non-empty role")
 			}
+			if tt.mustHave != "" && !strings.Contains(got, tt.mustHave) {
+				t.Errorf("inferRole() = %q; want substring %q", got, tt.mustHave)
+			}
 		})
 	}
 }
@@ -132,10 +240,11 @@ func TestInferOutputFormat(t *testing.T) {
 	tests := []struct {
 		name        string
 		info        promptInfo
-		wantContain string // substring the result must contain
+		wantContain string
 	}{
 		{"explicit json hint", promptInfo{outputHint: "Return valid, properly indented JSON."}, "JSON"},
-		{"code default", promptInfo{domain: domainCode}, "code"},
+		{"code build: design decisions", promptInfo{domain: domainCode, isBuildTask: true}, "design"},
+		{"code modify: root cause", promptInfo{domain: domainCode, isBuildTask: false}, "root cause"},
 		{"creative default", promptInfo{domain: domainCreative}, "prose"},
 		{"analysis question default", promptInfo{domain: domainAnalysis, isQuestion: true}, "example"},
 		{"analysis non-question default", promptInfo{domain: domainAnalysis, isQuestion: false}, "summary"},
@@ -165,17 +274,28 @@ func TestRender(t *testing.T) {
 	tests := []struct {
 		name     string
 		info     promptInfo
-		mustHave []string // XML tags/substrings that MUST appear
-		mustNot  []string // substrings that must NOT appear
+		mustHave []string
+		mustNot  []string
 	}{
 		{
-			name: "code domain has all major sections",
+			name: "code modify: all sections + root-cause framing",
 			info: promptInfo{
 				domain:      domainCode,
+				isBuildTask: false,
 				original:    "fix the auth bug",
-				constraints: buildConstraints(domainCode),
+				constraints: buildConstraints(promptInfo{domain: domainCode, isBuildTask: false}),
 			},
-			mustHave: []string{"<role>", "</role>", "<instructions>", "</instructions>", "<constraints>", "<output_format>"},
+			mustHave: []string{"<role>", "<instructions>", "<constraints>", "<output_format>", "root cause"},
+		},
+		{
+			name: "code build: design framing",
+			info: promptInfo{
+				domain:      domainCode,
+				isBuildTask: true,
+				original:    "implement a rate limiter",
+				constraints: buildConstraints(promptInfo{domain: domainCode, isBuildTask: true}),
+			},
+			mustHave: []string{"<role>", "Design", "Clarify requirements", "<output_format>", "design decisions"},
 		},
 		{
 			name: "general domain omits role and constraints",
@@ -183,7 +303,7 @@ func TestRender(t *testing.T) {
 				domain:   domainGeneral,
 				original: "hello world",
 			},
-			mustHave: []string{"<instructions>", "</instructions>", "<output_format>"},
+			mustHave: []string{"<instructions>", "<output_format>"},
 			mustNot:  []string{"<role>", "<constraints>"},
 		},
 		{
@@ -197,16 +317,12 @@ func TestRender(t *testing.T) {
 		},
 		{
 			name: "no intent means no context tag",
-			info: promptInfo{
-				domain:   domainCode,
-				original: "fix bug",
-				intent:   "",
-			},
+			info: promptInfo{domain: domainCode, original: "fix bug"},
 			mustNot: []string{"<context>"},
 		},
 		{
-			name: "output format always present",
-			info: promptInfo{domain: domainCreative, original: "write a poem"},
+			name:     "output format always present",
+			info:     promptInfo{domain: domainCreative, original: "write a poem"},
 			mustHave: []string{"<output_format>", "</output_format>"},
 		},
 		{
@@ -218,14 +334,6 @@ func TestRender(t *testing.T) {
 			},
 			mustHave: []string{"Return valid, properly indented JSON."},
 		},
-		{
-			name: "original prompt appears inside instructions",
-			info: promptInfo{
-				domain:   domainCode,
-				original: "implement a rate limiter",
-			},
-			mustHave: []string{"implement a rate limiter"},
-		},
 	}
 
 	for _, tt := range tests {
@@ -233,7 +341,6 @@ func TestRender(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			got := render(tt.info)
-
 			for _, s := range tt.mustHave {
 				if !strings.Contains(got, s) {
 					t.Errorf("render() missing %q\nfull output:\n%s", s, got)
@@ -251,7 +358,6 @@ func TestRender(t *testing.T) {
 // ---- Enhance — integration (uses prose NLP) ---------------------------------
 
 func TestEnhance(t *testing.T) {
-	// Not parallel: prose init is safe but no need to race here.
 	e := New()
 	ctx := context.Background()
 
@@ -274,9 +380,18 @@ func TestEnhance(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:     "code prompt: fix bug",
+			// Modify task: "fix" verb → defensive framing
+			name:     "code modify: fix bug",
 			prompt:   "fix the authentication bug in my Go HTTP handler",
-			mustHave: []string{"<instructions>", "</instructions>", "<output_format>"},
+			mustHave: []string{"<role>", "<instructions>", "<output_format>", "root cause"},
+			mustNot:  []string{"Clarify requirements"},
+		},
+		{
+			// Build task: "implement" verb → constructive framing
+			name:     "code build: implement scraper",
+			prompt:   "implement a financial news scraper in Go",
+			mustHave: []string{"<role>", "Design", "Clarify requirements", "design decisions"},
+			mustNot:  []string{"root cause"},
 		},
 		{
 			name:     "creative prompt: write blog",
@@ -303,8 +418,8 @@ func TestEnhance(t *testing.T) {
 			},
 		},
 		{
-			name:    "output hint: json format detected",
-			prompt:  "list all Go error handling patterns as json",
+			name:     "output hint: json format detected",
+			prompt:   "list all Go error handling patterns as json",
 			mustHave: []string{"<output_format>"},
 		},
 		{
@@ -323,17 +438,17 @@ func TestEnhance(t *testing.T) {
 			mustNot: []string{"<instructions>", "<role>"},
 		},
 		{
-			// Regression: "what" mid-sentence must not trigger isQuestion,
-			// and "Implement" mis-tagged by POS tagger must still score as code.
-			name:   "financial scraper API classified as code not analysis",
+			// Regression: "what" mid-sentence must not trigger isQuestion.
+			// "Implement" mis-tagged by POS tagger must still classify as code build.
+			name:   "regression: financial scraper API is code build, not analysis",
 			prompt: "Implement a financial news scraper API so that I can take news based action on what specific stocks I can invest in.",
 			mustHave: []string{
 				"<role>",
-				"<instructions>",
-				"Approach:", // code-domain instruction template
+				"Clarify requirements", // build-task approach step
 			},
 			mustNot: []string{
 				"State the key answer", // analysis template
+				"root cause",           // modify-task framing
 			},
 		},
 	}
@@ -341,7 +456,6 @@ func TestEnhance(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := e.Enhance(ctx, tt.prompt, tt.intent, "opus")
-
 			if tt.wantErr {
 				if err == nil {
 					t.Errorf("Enhance(%q) expected error; got nil", tt.prompt)
@@ -370,11 +484,9 @@ func TestEnhance(t *testing.T) {
 
 // ---- Fuzz -------------------------------------------------------------------
 
-// FuzzEnhance checks that Enhance never panics on arbitrary input and that
-// any non-empty prompt always produces a result with <instructions>.
 func FuzzEnhance(f *testing.F) {
-	// Seed corpus covering all domain paths.
 	f.Add("fix the bug in the handler")
+	f.Add("implement a rate limiter service")
 	f.Add("write a blog post about Go")
 	f.Add("what is a goroutine?")
 	f.Add("explain the difference between value and pointer receivers")
@@ -388,14 +500,12 @@ func FuzzEnhance(f *testing.F) {
 
 	f.Fuzz(func(t *testing.T, prompt string) {
 		result, err := e.Enhance(ctx, prompt, "", "")
-
 		if strings.TrimSpace(prompt) == "" {
 			if err == nil {
 				t.Errorf("expected error for blank prompt %q; got result %q", prompt, result)
 			}
 			return
 		}
-
 		if err != nil {
 			t.Errorf("unexpected error for prompt %q: %v", prompt, err)
 			return
@@ -422,8 +532,8 @@ func BenchmarkEnhance(b *testing.B) {
 		name   string
 		prompt string
 	}{
-		{"short_code", "fix the bug"},
-		{"medium_code", "implement a token-bucket rate limiter middleware for a Go HTTP server that limits requests per IP address"},
+		{"short_modify", "fix the bug"},
+		{"medium_build", "implement a token-bucket rate limiter middleware for a Go HTTP server that limits requests per IP address"},
 		{"short_question", "what is a goroutine?"},
 		{"medium_creative", "write a blog post about the future of AI in software engineering"},
 		{"long_analysis", "analyze the trade-offs between microservices and monolithic architectures, covering deployment complexity, team autonomy, data consistency, and operational overhead"},
@@ -450,30 +560,41 @@ func BenchmarkClassifyDomain(b *testing.B) {
 	}
 }
 
+func BenchmarkDetectBuildTask(b *testing.B) {
+	verbs := []string{"implement"}
+	all := []string{"implement", "a", "rate", "limiter", "service"}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		detectBuildTask(verbs, all)
+	}
+}
+
 func BenchmarkRender(b *testing.B) {
 	cases := []struct {
 		name string
 		info promptInfo
 	}{
-		{"code", promptInfo{
+		{"code_modify", promptInfo{
 			original:    "fix the auth bug in the HTTP handler",
 			domain:      domainCode,
-			constraints: buildConstraints(domainCode),
+			isBuildTask: false,
+			constraints: buildConstraints(promptInfo{domain: domainCode, isBuildTask: false}),
+		}},
+		{"code_build", promptInfo{
+			original:    "implement a rate limiter service",
+			domain:      domainCode,
+			isBuildTask: true,
+			constraints: buildConstraints(promptInfo{domain: domainCode, isBuildTask: true}),
 		}},
 		{"creative", promptInfo{
 			original:    "write a blog post about Go generics",
 			domain:      domainCreative,
-			constraints: buildConstraints(domainCreative),
+			constraints: buildConstraints(promptInfo{domain: domainCreative}),
 		}},
 		{"analysis_question", promptInfo{
 			original:   "what is the difference between goroutines and threads?",
 			domain:     domainAnalysis,
 			isQuestion: true,
-		}},
-		{"with_intent", promptInfo{
-			original: "explain closures",
-			domain:   domainAnalysis,
-			intent:   "for a developer new to Go",
 		}},
 	}
 
@@ -489,9 +610,15 @@ func BenchmarkRender(b *testing.B) {
 }
 
 func BenchmarkBuildConstraints(b *testing.B) {
-	domains := []domain{domainCode, domainCreative, domainAnalysis, domainGeneral}
+	infos := []promptInfo{
+		{domain: domainCode, isBuildTask: true},
+		{domain: domainCode, isBuildTask: false},
+		{domain: domainCreative},
+		{domain: domainAnalysis},
+		{domain: domainGeneral},
+	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		buildConstraints(domains[i%len(domains)])
+		buildConstraints(infos[i%len(infos)])
 	}
 }

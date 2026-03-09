@@ -16,14 +16,14 @@ type Enhancer struct{}
 // New creates a new Enhancer.
 func New() *Enhancer { return &Enhancer{} }
 
-// Enhance transforms prompt into a well-structured XML prompt.
-// intent is optional context about the underlying goal.
-// targetModel is accepted for interface compatibility but has no effect.
 // maxEnhanceWords is the word count above which prompts are considered
 // detailed enough to skip enhancement. Returning the prompt unchanged
 // avoids adding token overhead for already-structured inputs.
 const maxEnhanceWords = 300
 
+// Enhance transforms prompt into a well-structured XML prompt.
+// intent is optional context about the underlying goal.
+// targetModel is accepted for interface compatibility but has no effect.
 func (e *Enhancer) Enhance(_ context.Context, prompt, intent, _ string) (string, error) {
 	prompt = strings.TrimSpace(prompt)
 	if prompt == "" {
@@ -58,6 +58,7 @@ type promptInfo struct {
 	original    string
 	intent      string
 	domain      domain
+	isBuildTask bool // true = greenfield build; false = modify/fix existing code
 	isQuestion  bool
 	isMultiStep bool // more than two sentences detected
 	mainVerb    string
@@ -74,9 +75,9 @@ const (
 
 var (
 	// Verb lexicons by domain — imperative verbs are the strongest signals.
-	// These are also used as a POS-tag-independent fallback (at half weight)
-	// because prose/v2 often mis-tags capitalised sentence-opening imperatives
-	// (e.g. "Implement") as NNP instead of VB.
+	// Also used as a POS-tag-independent fallback (at half weight) because
+	// prose/v2 often mis-tags capitalised sentence-opening imperatives
+	// (e.g. "Implement" → NNP instead of VB).
 	codeVerbs = strset(
 		"fix", "debug", "implement", "refactor", "optimize", "build",
 		"deploy", "test", "lint", "migrate", "convert", "parse", "serialize",
@@ -94,8 +95,16 @@ var (
 		"contrast", "discuss", "outline", "list",
 	)
 
-	// Noun lexicons help when the verb is ambiguous
-	// (e.g. "create a blog post" vs "create a function").
+	// buildVerbs are code verbs that signal a greenfield/new implementation.
+	// Any code verb NOT in this set is treated as a modify/fix task.
+	buildVerbs = strset(
+		"implement", "build", "develop", "create", "generate", "scaffold",
+		"integrate", "scrape", "crawl", "ingest", "stream", "index",
+		"authenticate", "authorize", "deploy",
+	)
+
+	// Noun lexicons disambiguate when the verb alone is insufficient
+	// (e.g. "create a blog post" vs "create an API").
 	codeNouns = strset(
 		"code", "function", "func", "method", "class", "bug", "error", "script",
 		"program", "api", "endpoint", "query", "sql", "test", "algorithm", "regex",
@@ -150,8 +159,8 @@ func analyze(prompt, intent string, doc *prose.Document) promptInfo {
 	tokens := doc.Tokens()
 
 	// isQuestion: trailing "?" OR the very first token is a WH-word.
-	// Mid-sentence WH-words (e.g. "on what stocks") must NOT trigger this —
-	// they are relative clauses, not questions.
+	// Mid-sentence WH-words (e.g. "on what stocks") are relative clauses —
+	// they must NOT trigger isQuestion.
 	trimmed := strings.TrimSpace(prompt)
 	if strings.HasSuffix(trimmed, "?") {
 		info.isQuestion = true
@@ -182,6 +191,12 @@ func analyze(prompt, intent string, doc *prose.Document) promptInfo {
 
 	info.domain = classifyDomain(verbs, nouns, all, info.isQuestion)
 
+	// For code prompts, determine whether this is a greenfield build task or
+	// a modify/fix task — each needs different framing and constraints.
+	if info.domain == domainCode {
+		info.isBuildTask = detectBuildTask(verbs, all)
+	}
+
 	// Detect output format hints from the raw prompt.
 	lower := strings.ToLower(prompt)
 	for kw, desc := range outputHints {
@@ -191,7 +206,7 @@ func analyze(prompt, intent string, doc *prose.Document) promptInfo {
 		}
 	}
 
-	info.constraints = buildConstraints(info.domain)
+	info.constraints = buildConstraints(info)
 	return info
 }
 
@@ -199,7 +214,7 @@ func analyze(prompt, intent string, doc *prose.Document) promptInfo {
 // Scoring weights:
 //   - POS-confirmed verb match  → +2
 //   - POS-confirmed noun match  → +1
-//   - Fallback: any token in a verb lexicon (catches mis-tagged imperatives) → +1
+//   - Fallback: token in verb lexicon (catches mis-tagged imperatives) → +1
 //   - isQuestion                → +2 analysis
 func classifyDomain(verbs, nouns, all []string, isQuestion bool) domain {
 	scores := map[domain]int{}
@@ -226,8 +241,7 @@ func classifyDomain(verbs, nouns, all []string, isQuestion bool) domain {
 		}
 	}
 	// Fallback: score every token against verb lexicons (weight 1).
-	// This recovers signal when the POS tagger mis-tags an imperative verb
-	// (e.g. "Implement" → NNP at sentence start).
+	// Recovers signal when the POS tagger mis-tags an imperative verb.
 	verbSeen := make(map[string]bool, len(verbs))
 	for _, v := range verbs {
 		verbSeen[v] = true
@@ -260,9 +274,42 @@ func classifyDomain(verbs, nouns, all []string, isQuestion bool) domain {
 	return best
 }
 
-func buildConstraints(d domain) []string {
-	switch d {
+// detectBuildTask returns true when the dominant code verb signals a
+// greenfield implementation (implement, build, develop, create, …) rather
+// than a modification to existing code (fix, debug, refactor, …).
+// POS-confirmed verbs are checked first; the fallback scans all tokens so
+// mis-tagged imperatives are still caught.
+func detectBuildTask(verbs, all []string) bool {
+	for _, v := range verbs {
+		if buildVerbs[v] {
+			return true
+		}
+		if codeVerbs[v] { // modify verb confirmed by POS
+			return false
+		}
+	}
+	for _, w := range all {
+		if buildVerbs[w] {
+			return true
+		}
+		if codeVerbs[w] {
+			return false
+		}
+	}
+	return true // default: treat unknown code prompts as build
+}
+
+func buildConstraints(info promptInfo) []string {
+	switch info.domain {
 	case domainCode:
+		if info.isBuildTask {
+			return []string{
+				"Define clear interfaces and data structures before writing implementation code",
+				"Keep functions small and focused — each should do one thing well",
+				"Handle all error paths explicitly; never silently ignore errors",
+				"Write production-ready code: no placeholder TODOs or stub implementations",
+			}
+		}
 		return []string{
 			"Make only the changes necessary to fulfill the request — do not refactor unrelated code",
 			"Preserve existing function signatures and public interfaces",
@@ -328,12 +375,15 @@ func render(info promptInfo) string {
 func inferRole(info promptInfo) string {
 	switch info.domain {
 	case domainCode:
-		return "Expert software engineer. Write correct, idiomatic, production-quality code."
+		if info.isBuildTask {
+			return "Expert software engineer. Design and implement correct, idiomatic, production-quality code from scratch."
+		}
+		return "Expert software engineer. Diagnose and fix issues precisely with minimal, targeted changes."
 	case domainCreative:
 		return "Skilled writer with expertise in crafting clear, engaging, audience-appropriate content."
 	case domainAnalysis:
 		if info.isQuestion {
-			return "" // no role needed for simple explanatory questions
+			return "" // no persona needed for direct explanatory questions
 		}
 		return "Expert analyst. Provide precise, well-reasoned assessments backed by concrete examples."
 	default:
@@ -345,11 +395,19 @@ func writeInstructions(b *strings.Builder, info promptInfo) {
 	switch info.domain {
 	case domainCode:
 		fmt.Fprintf(b, "%s\n\n", info.original)
-		b.WriteString("Approach:\n")
-		b.WriteString("1. Read and understand the relevant code before making any changes\n")
-		b.WriteString("2. Identify the root cause or exact requirement\n")
-		b.WriteString("3. Implement the minimal, correct solution\n")
-		b.WriteString("4. Verify that edge cases are handled correctly")
+		if info.isBuildTask {
+			b.WriteString("Approach:\n")
+			b.WriteString("1. Clarify requirements and identify the core data structures and interfaces needed\n")
+			b.WriteString("2. Design the solution architecture before writing any code\n")
+			b.WriteString("3. Implement each component with clear separation of concerns\n")
+			b.WriteString("4. Handle errors explicitly and cover edge cases throughout")
+		} else {
+			b.WriteString("Approach:\n")
+			b.WriteString("1. Read and understand the relevant code before making any changes\n")
+			b.WriteString("2. Identify the root cause or exact requirement\n")
+			b.WriteString("3. Implement the minimal, correct solution\n")
+			b.WriteString("4. Verify that edge cases are handled correctly")
+		}
 
 	case domainCreative:
 		fmt.Fprintf(b, "%s\n\n", info.original)
@@ -377,7 +435,10 @@ func inferOutputFormat(info promptInfo) string {
 	}
 	switch info.domain {
 	case domainCode:
-		return "Explain your reasoning briefly, then show the complete, working code."
+		if info.isBuildTask {
+			return "Explain your design decisions briefly, then provide the complete, working implementation."
+		}
+		return "Explain the root cause briefly, then show the complete, corrected code."
 	case domainCreative:
 		return "Write in flowing prose. Prioritize clarity and engagement over length."
 	case domainAnalysis:
