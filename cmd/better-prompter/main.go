@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -26,7 +27,7 @@ func main() {
 		if prompt == "" {
 			os.Exit(0)
 		}
-		xml, err := prompter.New().Enhance(prompt)
+		xml, err := prompter.New().Enhance(context.Background(), prompt, "", "")
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "enhance error: %v\n", err)
 			os.Exit(1)
