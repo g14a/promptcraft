@@ -314,6 +314,11 @@ func TestEnhance(t *testing.T) {
 			prompt:   "do something useful",
 			mustHave: []string{"<instructions>", "</instructions>", "<output_format>", "</output_format>"},
 		},
+		{
+			name:    "large prompt (>300 words) is returned unchanged",
+			prompt:  strings.Repeat("word ", 301),
+			mustNot: []string{"<instructions>", "<role>"},
+		},
 	}
 
 	for _, tt := range tests {

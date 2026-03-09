@@ -19,10 +19,18 @@ func New() *Enhancer { return &Enhancer{} }
 // Enhance transforms prompt into a well-structured XML prompt.
 // intent is optional context about the underlying goal.
 // targetModel is accepted for interface compatibility but has no effect.
+// maxEnhanceWords is the word count above which prompts are considered
+// detailed enough to skip enhancement. Returning the prompt unchanged
+// avoids adding token overhead for already-structured inputs.
+const maxEnhanceWords = 300
+
 func (e *Enhancer) Enhance(_ context.Context, prompt, intent, _ string) (string, error) {
 	prompt = strings.TrimSpace(prompt)
 	if prompt == "" {
 		return "", fmt.Errorf("prompt cannot be empty")
+	}
+	if len(strings.Fields(prompt)) > maxEnhanceWords {
+		return prompt, nil
 	}
 
 	doc, err := prose.NewDocument(prompt)
