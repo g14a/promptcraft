@@ -15,42 +15,45 @@ func TestClassifyDomain(t *testing.T) {
 		name       string
 		verbs      []string
 		nouns      []string
+		all        []string // all tokens (POS-tag-independent fallback)
 		isQuestion bool
 		want       domain
 	}{
-		// Strong verb signals
-		{"code verb: fix", []string{"fix"}, nil, false, domainCode},
-		{"code verb: debug", []string{"debug"}, nil, false, domainCode},
-		{"code verb: implement", []string{"implement"}, nil, false, domainCode},
-		{"code verb: refactor", []string{"refactor"}, nil, false, domainCode},
-		{"creative verb: write", []string{"write"}, nil, false, domainCreative},
-		{"creative verb: draft", []string{"draft"}, nil, false, domainCreative},
-		{"creative verb: compose", []string{"compose"}, nil, false, domainCreative},
-		{"analysis verb: explain", []string{"explain"}, nil, false, domainAnalysis},
-		{"analysis verb: compare", []string{"compare"}, nil, false, domainAnalysis},
-		{"analysis verb: evaluate", []string{"evaluate"}, nil, false, domainAnalysis},
+		// Strong POS-confirmed verb signals
+		{"code verb: fix", []string{"fix"}, nil, nil, false, domainCode},
+		{"code verb: debug", []string{"debug"}, nil, nil, false, domainCode},
+		{"code verb: implement", []string{"implement"}, nil, nil, false, domainCode},
+		{"code verb: refactor", []string{"refactor"}, nil, nil, false, domainCode},
+		{"creative verb: draft", []string{"draft"}, nil, nil, false, domainCreative},
+		{"creative verb: compose", []string{"compose"}, nil, nil, false, domainCreative},
+		{"analysis verb: explain", []string{"explain"}, nil, nil, false, domainAnalysis},
+		{"analysis verb: compare", []string{"compare"}, nil, nil, false, domainAnalysis},
+		{"analysis verb: evaluate", []string{"evaluate"}, nil, nil, false, domainAnalysis},
 		// Noun disambiguation when verb is ambiguous or absent
-		{"code nouns only", nil, []string{"function", "bug"}, false, domainCode},
-		{"creative nouns only", nil, []string{"blog", "article"}, false, domainCreative},
+		{"code nouns only", nil, []string{"function", "bug"}, nil, false, domainCode},
+		{"creative nouns only", nil, []string{"blog", "article"}, nil, false, domainCreative},
 		// Verb outweighs single opposing noun (verbs 2× nouns)
-		{"code verb beats creative noun", []string{"fix"}, []string{"blog"}, false, domainCode},
-		{"creative verb beats code noun", []string{"write"}, []string{"function"}, false, domainCreative},
+		{"code verb beats creative noun", []string{"fix"}, []string{"blog"}, nil, false, domainCode},
+		{"creative verb beats code noun", []string{"write"}, []string{"function"}, nil, false, domainCreative},
 		// Question flag adds +2 to analysis
-		{"question with no lexical signal", nil, nil, true, domainAnalysis},
-		{"question + analysis verb amplifies", []string{"explain"}, nil, true, domainAnalysis},
+		{"question with no lexical signal", nil, nil, nil, true, domainAnalysis},
+		{"question + analysis verb amplifies", []string{"explain"}, nil, nil, true, domainAnalysis},
+		// Fallback scoring: mis-tagged imperative verb recovered via `all` tokens
+		{"fallback: implement mis-tagged (not in verbs)", nil, nil, []string{"implement", "api"}, false, domainCode},
+		{"fallback: scraper noun + implement fallback beats question", nil, []string{"scraper", "api"}, []string{"implement", "scraper", "api"}, true, domainCode},
 		// No signal → general
-		{"no signal general", nil, nil, false, domainGeneral},
-		{"empty all", []string{}, []string{}, false, domainGeneral},
+		{"no signal general", nil, nil, nil, false, domainGeneral},
+		{"empty all", []string{}, []string{}, []string{}, false, domainGeneral},
 	}
 
 	for _, tt := range tests {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got := classifyDomain(tt.verbs, tt.nouns, tt.isQuestion)
+			got := classifyDomain(tt.verbs, tt.nouns, tt.all, tt.isQuestion)
 			if got != tt.want {
-				t.Errorf("classifyDomain(%v, %v, %v) = %d; want %d",
-					tt.verbs, tt.nouns, tt.isQuestion, got, tt.want)
+				t.Errorf("classifyDomain(verbs=%v, nouns=%v, all=%v, q=%v) = %d; want %d",
+					tt.verbs, tt.nouns, tt.all, tt.isQuestion, got, tt.want)
 			}
 		})
 	}
@@ -319,6 +322,20 @@ func TestEnhance(t *testing.T) {
 			prompt:  strings.Repeat("word ", 301),
 			mustNot: []string{"<instructions>", "<role>"},
 		},
+		{
+			// Regression: "what" mid-sentence must not trigger isQuestion,
+			// and "Implement" mis-tagged by POS tagger must still score as code.
+			name:   "financial scraper API classified as code not analysis",
+			prompt: "Implement a financial news scraper API so that I can take news based action on what specific stocks I can invest in.",
+			mustHave: []string{
+				"<role>",
+				"<instructions>",
+				"Approach:", // code-domain instruction template
+			},
+			mustNot: []string{
+				"State the key answer", // analysis template
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -426,9 +443,10 @@ func BenchmarkEnhance(b *testing.B) {
 func BenchmarkClassifyDomain(b *testing.B) {
 	verbs := []string{"fix", "debug", "implement"}
 	nouns := []string{"function", "bug", "code"}
+	all := []string{"implement", "fix", "debug", "function", "bug", "code", "the", "a"}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		classifyDomain(verbs, nouns, false)
+		classifyDomain(verbs, nouns, all, false)
 	}
 }
 

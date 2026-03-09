@@ -73,14 +73,19 @@ const (
 )
 
 var (
-	// Verb lexicons by domain — imperative verbs are strongest signals.
+	// Verb lexicons by domain — imperative verbs are the strongest signals.
+	// These are also used as a POS-tag-independent fallback (at half weight)
+	// because prose/v2 often mis-tags capitalised sentence-opening imperatives
+	// (e.g. "Implement") as NNP instead of VB.
 	codeVerbs = strset(
 		"fix", "debug", "implement", "refactor", "optimize", "build",
 		"deploy", "test", "lint", "migrate", "convert", "parse", "serialize",
 		"compile", "format", "generate", "scaffold", "hook", "mock", "stub",
+		"develop", "create", "integrate", "scrape", "crawl", "ingest",
+		"stream", "cache", "index", "authenticate", "authorize",
 	)
 	creativeVerbs = strset(
-		"write", "draft", "compose", "craft", "create",
+		"write", "draft", "compose", "craft",
 		"design", "rewrite", "edit", "proofread",
 	)
 	analysisVerbs = strset(
@@ -89,7 +94,8 @@ var (
 		"contrast", "discuss", "outline", "list",
 	)
 
-	// Noun lexicons help when the verb alone is ambiguous (e.g. "create a blog post" vs "create a function").
+	// Noun lexicons help when the verb is ambiguous
+	// (e.g. "create a blog post" vs "create a function").
 	codeNouns = strset(
 		"code", "function", "func", "method", "class", "bug", "error", "script",
 		"program", "api", "endpoint", "query", "sql", "test", "algorithm", "regex",
@@ -97,6 +103,11 @@ var (
 		"migration", "dockerfile", "kubernetes", "interface", "struct",
 		"library", "package", "module", "dependency", "benchmark", "compiler",
 		"linter", "repository", "commit", "branch",
+		// commonly mis-classified technical nouns
+		"scraper", "crawler", "service", "server", "client", "microservice",
+		"pipeline", "sdk", "cli", "webhook", "middleware", "handler",
+		"daemon", "proxy", "worker", "queue", "cache", "broker", "socket",
+		"runtime", "container", "cluster", "deployment", "ingress",
 	)
 	creativeNouns = strset(
 		"blog", "post", "article", "essay", "story", "poem", "email", "letter",
@@ -136,23 +147,32 @@ func analyze(prompt, intent string, doc *prose.Document) promptInfo {
 	// Multi-step detection: more than 2 sentences suggests a compound task.
 	info.isMultiStep = len(doc.Sentences()) > 2
 
-	// Walk tokens: collect verbs and nouns by POS tag; detect interrogatives.
-	var verbs, nouns []string
-	for _, tok := range doc.Tokens() {
+	tokens := doc.Tokens()
+
+	// isQuestion: trailing "?" OR the very first token is a WH-word.
+	// Mid-sentence WH-words (e.g. "on what stocks") must NOT trigger this —
+	// they are relative clauses, not questions.
+	trimmed := strings.TrimSpace(prompt)
+	if strings.HasSuffix(trimmed, "?") {
+		info.isQuestion = true
+	} else if len(tokens) > 0 && strings.HasPrefix(tokens[0].Tag, posWH) {
+		info.isQuestion = true
+	}
+
+	// Walk tokens: collect verbs and nouns by POS tag.
+	// Also accumulate all lowercased tokens for POS-tag-independent fallback
+	// scoring — prose/v2 frequently mis-tags capitalised sentence-opening
+	// imperative verbs (e.g. "Implement" → NNP).
+	var verbs, nouns, all []string
+	for _, tok := range tokens {
 		lower := strings.ToLower(tok.Text)
+		all = append(all, lower)
 		switch {
 		case strings.HasPrefix(tok.Tag, posVerb):
 			verbs = append(verbs, lower)
 		case strings.HasPrefix(tok.Tag, posNoun):
 			nouns = append(nouns, lower)
-		case strings.HasPrefix(tok.Tag, posWH):
-			info.isQuestion = true
 		}
-	}
-
-	// Trailing "?" also signals a question.
-	if strings.HasSuffix(strings.TrimSpace(prompt), "?") {
-		info.isQuestion = true
 	}
 
 	// Record the first meaningful verb — it's the strongest intent signal.
@@ -160,7 +180,7 @@ func analyze(prompt, intent string, doc *prose.Document) promptInfo {
 		info.mainVerb = verbs[0]
 	}
 
-	info.domain = classifyDomain(verbs, nouns, info.isQuestion)
+	info.domain = classifyDomain(verbs, nouns, all, info.isQuestion)
 
 	// Detect output format hints from the raw prompt.
 	lower := strings.ToLower(prompt)
@@ -175,11 +195,16 @@ func analyze(prompt, intent string, doc *prose.Document) promptInfo {
 	return info
 }
 
-// classifyDomain scores each domain by verb + noun matches, with verbs
-// weighted 2× over nouns. Questions gain extra analysis score.
-func classifyDomain(verbs, nouns []string, isQuestion bool) domain {
+// classifyDomain scores each domain by verb + noun matches.
+// Scoring weights:
+//   - POS-confirmed verb match  → +2
+//   - POS-confirmed noun match  → +1
+//   - Fallback: any token in a verb lexicon (catches mis-tagged imperatives) → +1
+//   - isQuestion                → +2 analysis
+func classifyDomain(verbs, nouns, all []string, isQuestion bool) domain {
 	scores := map[domain]int{}
 
+	// POS-confirmed verbs (weight 2).
 	for _, v := range verbs {
 		if codeVerbs[v] {
 			scores[domainCode] += 2
@@ -191,6 +216,7 @@ func classifyDomain(verbs, nouns []string, isQuestion bool) domain {
 			scores[domainAnalysis] += 2
 		}
 	}
+	// POS-confirmed nouns (weight 1).
 	for _, n := range nouns {
 		if codeNouns[n] {
 			scores[domainCode]++
@@ -199,14 +225,36 @@ func classifyDomain(verbs, nouns []string, isQuestion bool) domain {
 			scores[domainCreative]++
 		}
 	}
+	// Fallback: score every token against verb lexicons (weight 1).
+	// This recovers signal when the POS tagger mis-tags an imperative verb
+	// (e.g. "Implement" → NNP at sentence start).
+	verbSeen := make(map[string]bool, len(verbs))
+	for _, v := range verbs {
+		verbSeen[v] = true
+	}
+	for _, w := range all {
+		if verbSeen[w] {
+			continue // already scored above at full weight
+		}
+		if codeVerbs[w] {
+			scores[domainCode]++
+		}
+		if creativeVerbs[w] {
+			scores[domainCreative]++
+		}
+		if analysisVerbs[w] {
+			scores[domainAnalysis]++
+		}
+	}
+
 	if isQuestion {
 		scores[domainAnalysis] += 2
 	}
 
-	best, max := domainGeneral, 0
+	best, bestScore := domainGeneral, 0
 	for d, s := range scores {
-		if s > max {
-			max, best = s, d
+		if s > bestScore {
+			bestScore, best = s, d
 		}
 	}
 	return best
