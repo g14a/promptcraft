@@ -1,11 +1,11 @@
 .PHONY: build run vet test clean install
 
-BINARY  := better-prompter
+BINARY  := promptcraft
 VERSION := 1.0.0
 LDFLAGS := -ldflags="-s -w -X main.version=$(VERSION)"
 
 build:
-	go build $(LDFLAGS) -o $(BINARY) ./cmd/better-prompter
+	go build $(LDFLAGS) -o $(BINARY) ./cmd/promptcraft
 
 vet:
 	go vet ./...
@@ -17,7 +17,7 @@ clean:
 	rm -f $(BINARY)
 
 install:
-	go install -ldflags="-s -w -X main.version=$(VERSION)" ./cmd/better-prompter
+	go install -ldflags="-s -w -X main.version=$(VERSION)" ./cmd/promptcraft
 	@echo "Installed to $$(go env GOPATH)/bin/$(BINARY)"
 
 # Quick smoke-test: send an initialize request and check the response.

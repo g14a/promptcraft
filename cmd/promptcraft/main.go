@@ -8,15 +8,15 @@ import (
 	"os"
 	"strings"
 
-	"github.com/better-prompter/better-prompter/internal/mcp"
-	"github.com/better-prompter/better-prompter/internal/prompter"
+	"github.com/promptcraft/promptcraft/internal/mcp"
+	"github.com/promptcraft/promptcraft/internal/prompter"
 )
 
 const version = "1.0.0"
 
 func main() {
 	// Single-shot CLI mode: read prompt from stdin, write XML to stdout.
-	// Usage: echo "my prompt" | better-prompter --enhance
+	// Usage: echo "my prompt" | promptcraft --enhance
 	if len(os.Args) == 2 && os.Args[1] == "--enhance" {
 		raw, err := io.ReadAll(os.Stdin)
 		if err != nil {
@@ -42,12 +42,12 @@ func main() {
 	log.SetFlags(0)
 
 	srv := mcp.NewServer(mcp.Config{
-		Name:     "better-prompter",
+		Name:     "promptcraft",
 		Version:  version,
 		Enhancer: prompter.New(),
 	})
 
-	log.Printf("better-prompter v%s ready", version)
+	log.Printf("promptcraft v%s ready", version)
 
 	if err := srv.Run(); err != nil {
 		log.Fatalf("server error: %v", err)

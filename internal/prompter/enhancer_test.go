@@ -126,9 +126,15 @@ func TestBuildConstraints(t *testing.T) {
 			mustContain: "root cause",
 		},
 		{
-			name:        "creative: 2 constraints",
-			info:        promptInfo{domain: domainCreative},
-			wantN:       2,
+			name:        "creative: 3 constraints including audience",
+			info:        promptInfo{domain: domainCreative, needsStructuredOutput: true},
+			wantN:       6, // 3 structured + 3 creative base constraints
+			mustContain: "audience",
+		},
+		{
+			name:        "creative basic: 3 constraints",
+			info:        promptInfo{domain: domainCreative, needsStructuredOutput: false},
+			wantN:       3,
 			mustContain: "audience",
 		},
 		{
@@ -249,11 +255,11 @@ func TestInferOutputFormat(t *testing.T) {
 		{"code build: verify requirements", promptInfo{domain: domainCode, isBuildTask: true}, "requirements"},
 		{"code modify: root cause", promptInfo{domain: domainCode, isBuildTask: false}, "root cause"},
 		{"code modify: confirm fix", promptInfo{domain: domainCode, isBuildTask: false}, "confirm"},
-		{"creative default", promptInfo{domain: domainCreative}, "prose"},
+		{"creative default", promptInfo{domain: domainCreative}, "flowing_content"},
 		{"analysis question: evidence", promptInfo{domain: domainAnalysis, isQuestion: true}, "evidence"},
 		{"analysis question: uncertainty", promptInfo{domain: domainAnalysis, isQuestion: true}, "uncertain"},
 		{"analysis non-question: summary", promptInfo{domain: domainAnalysis, isQuestion: false}, "summary"},
-		{"analysis non-question: confidence", promptInfo{domain: domainAnalysis, isQuestion: false}, "confidence"},
+		{"analysis non-question: key findings", promptInfo{domain: domainAnalysis, isQuestion: false}, "key_findings"},
 		{"general: assumption note", promptInfo{domain: domainGeneral}, "assumption"},
 	}
 
@@ -450,7 +456,7 @@ func TestEnhance(t *testing.T) {
 			prompt: "Implement a financial news scraper API so that I can take news based action on what specific stocks I can invest in.",
 			mustHave: []string{
 				"<role>",
-				"Clarify requirements", // build-task approach step
+				"missing requirements", // build-task approach step
 			},
 			mustNot: []string{
 				"State the key answer", // analysis template

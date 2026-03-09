@@ -55,15 +55,17 @@ const (
 
 // promptInfo holds NLP-derived facts about the prompt.
 type promptInfo struct {
-	original    string
-	intent      string
-	domain      domain
-	isBuildTask bool // true = greenfield build; false = modify/fix existing code
-	isQuestion  bool
-	isMultiStep bool // more than two sentences detected
-	mainVerb    string
-	outputHint  string   // detected output format (json, table, etc.)
-	constraints []string // domain-specific constraints
+	original           string
+	intent             string
+	domain             domain
+	isBuildTask        bool // true = greenfield build; false = modify/fix existing code
+	isQuestion         bool
+	isMultiStep        bool // more than two sentences detected
+	needsStructuredOutput bool // true = benefits from Claude API structured outputs
+	mainVerb           string
+	outputHint         string   // detected output format (json, table, etc.)
+	constraints        []string // domain-specific constraints
+	entities           []string // proper-noun groups to suggest as template variables
 }
 
 // POS tag prefixes used for classification.
@@ -124,17 +126,29 @@ var (
 		"proposal", "report", "tweet", "copy", "content", "headline",
 	)
 
+
 	// Output format keywords → instruction text.
 	outputHints = map[string]string{
-		"json":     "Return valid, properly indented JSON.",
-		"xml":      "Return well-formed XML.",
-		"yaml":     "Return valid YAML.",
+		"json":     "Return valid, properly indented JSON matching the requested structure.",
+		"xml":      "Return well-formed XML with clear element names and proper nesting.",
+		"yaml":     "Return valid YAML with consistent indentation.",
 		"csv":      "Return CSV with a header row and one record per line.",
 		"table":    "Present results in a formatted table with clear column headers.",
-		"markdown": "Format the response in Markdown.",
-		"bullet":   "Use concise bullet points.",
-		"list":     "Use a numbered list.",
+		"markdown": "Format the response in Markdown with appropriate headings and structure.",
+		"bullet":   "Use concise bullet points with clear, actionable items.",
+		"list":     "Use a numbered list with logical sequencing.",
+		"schema":   "Define a clear JSON schema for the requested data structure.",
+		"extract":  "Extract the requested information in structured format with labeled fields.",
+		"classify": "Provide classification results with confidence levels and reasoning.",
+		"summary":  "Structure the summary with distinct sections and key takeaways.",
 	}
+
+	// Structured output indicators - suggest Claude API structured outputs
+	structuredOutputKeywords = strset(
+		"schema", "extract", "parse", "structure", "format", "classify",
+		"categorize", "organize", "fields", "properties", "validate",
+		"conform", "standardize", "template", "pattern",
+	)
 )
 
 func strset(words ...string) map[string]bool {
@@ -197,6 +211,7 @@ func analyze(prompt, intent string, doc *prose.Document) promptInfo {
 		info.isBuildTask = detectBuildTask(verbs, all)
 	}
 
+
 	// Detect output format hints from the raw prompt.
 	lower := strings.ToLower(prompt)
 	for kw, desc := range outputHints {
@@ -206,8 +221,61 @@ func analyze(prompt, intent string, doc *prose.Document) promptInfo {
 		}
 	}
 
+	// Detect need for structured outputs (Claude API feature suggestion)
+	for kw := range structuredOutputKeywords {
+		if strings.Contains(lower, kw) {
+			info.needsStructuredOutput = true
+			break
+		}
+	}
+
+	// Extract proper-noun groups as template variable candidates.
+	// Consecutive NNP/NNPS tokens form a single entity (e.g. "Economic Times").
+	info.entities = extractEntities(tokens)
+
 	info.constraints = buildConstraints(info)
 	return info
+}
+
+// extractEntities groups consecutive proper-noun tokens into named entities.
+// Single-word generic proper nouns (I, API, URL, HTTP, etc.) are skipped.
+func extractEntities(tokens []prose.Token) []string {
+	skip := strset("i", "api", "url", "http", "https", "json", "xml", "sql", "rest", "sdk")
+	var entities []string
+	var current []string
+
+	flush := func() {
+		if len(current) > 0 {
+			entity := strings.Join(current, " ")
+			// Skip single tokens that are generic abbreviations or stop-words.
+			if len(current) > 1 || (!skip[strings.ToLower(entity)] && len(entity) > 2) {
+				entities = append(entities, entity)
+			}
+			current = current[:0]
+		}
+	}
+
+	for _, tok := range tokens {
+		if tok.Tag == "NNP" || tok.Tag == "NNPS" {
+			current = append(current, tok.Text)
+		} else {
+			flush()
+		}
+	}
+	flush()
+	return dedup(entities)
+}
+
+func dedup(ss []string) []string {
+	seen := make(map[string]bool, len(ss))
+	out := ss[:0]
+	for _, s := range ss {
+		if !seen[s] {
+			seen[s] = true
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // classifyDomain scores each domain by verb + noun matches.
@@ -300,34 +368,51 @@ func detectBuildTask(verbs, all []string) bool {
 }
 
 func buildConstraints(info promptInfo) []string {
+	baseConstraints := getBaseConstraints(info)
+
+	// Add structured output guidance if needed
+	if info.needsStructuredOutput {
+		structuredConstraints := []string{
+			"Use consistent field names and data types throughout your response",
+			"Provide complete data for all requested fields when information is available",
+			"Use clear, descriptive labels for any categories or classifications",
+		}
+		return append(structuredConstraints, baseConstraints...)
+	}
+
+	return baseConstraints
+}
+
+func getBaseConstraints(info promptInfo) []string {
 	switch info.domain {
 	case domainCode:
 		if info.isBuildTask {
 			return []string{
-				"State all assumptions about unspecified requirements upfront, before writing any code",
-				"List any external libraries, APIs, or services the implementation requires",
-				"Define clear interfaces and data structures before writing implementation code",
-				"Keep functions small and focused — each should do one thing well",
-				"Handle all error paths explicitly; never silently ignore errors",
-				"Write production-ready code: no placeholder TODOs or stub implementations",
+				"State all assumptions about unspecified requirements upfront, before writing code",
+				"List the external libraries, APIs, or services the implementation will use",
+				"Define clear interfaces and data structures before implementation details",
+				"Write focused functions that accomplish one specific task well",
+				"Handle error conditions explicitly with appropriate error messages",
+				"Provide complete, working code without placeholder TODOs or incomplete sections",
 			}
 		}
 		return []string{
-			"Think through the root cause before changing anything — state your hypothesis first",
-			"Make only the changes necessary to fulfill the request — do not refactor unrelated code",
-			"Preserve existing function signatures and public interfaces",
-			"If the root cause cannot be determined from the available context, state what additional information is needed rather than guessing",
+			"State your hypothesis about the root cause before making changes",
+			"Focus changes on addressing the specific issue described in the request",
+			"Preserve existing function signatures and public interfaces unless modification is required",
+			"Request additional context when the root cause cannot be determined from available information",
 		}
 	case domainCreative:
 		return []string{
-			"Match tone and voice to the intended audience; if unspecified, state the assumed audience",
-			`Avoid generic openings and filler phrases ("In today's world...", "Certainly!")`,
+			"Match tone and voice to the intended audience; state your assumed audience if unspecified",
+			"Use engaging openings that draw the reader in immediately",
+			"Develop each point with specific, concrete details and examples",
 		}
 	case domainAnalysis:
 		return []string{
-			"Support each claim with a specific example, data point, or evidence — avoid vague generalities",
-			"If a claim cannot be supported with available evidence, omit it or flag it explicitly as uncertain",
-			"Acknowledge relevant trade-offs, caveats, or limitations where they exist",
+			"Support each claim with specific examples, data points, or concrete evidence",
+			"Flag any claims as uncertain when supporting evidence is limited or unavailable",
+			"Acknowledge relevant trade-offs, caveats, or limitations where they apply to your analysis",
 		}
 	default:
 		return nil
@@ -432,23 +517,32 @@ func writeInstructions(b *strings.Builder, info promptInfo) {
 }
 
 func inferOutputFormat(info promptInfo) string {
+	// Structured output suggestions for Claude API features
+	if info.needsStructuredOutput {
+		if info.outputHint != "" {
+			return info.outputHint + " Consider using Claude API structured outputs (output_config.format) for guaranteed schema compliance."
+		}
+		return "Structure your response with clear, labeled sections. For JSON/schema requirements, consider using Claude API structured outputs (output_config.format) to guarantee valid formatting."
+	}
+
 	if info.outputHint != "" {
 		return info.outputHint
 	}
+
 	switch info.domain {
 	case domainCode:
 		if info.isBuildTask {
-			return "State any assumptions and external dependencies first. Explain key design decisions briefly, then provide the complete, working implementation. After the code, confirm it satisfies all stated requirements."
+			return "Organize your response in <implementation_plan>, <code>, and <verification> sections. State assumptions and dependencies first, explain key design decisions, provide complete working code, then confirm requirements are met."
 		}
-		return "State the root cause and your reasoning. Show the complete, corrected code. Confirm the fix addresses the original issue and list any edge cases verified."
+		return "Structure your response in <root_cause_analysis>, <solution>, and <verification> sections. State your hypothesis about the root cause, show the corrected code, then confirm the fix addresses the issue."
 	case domainCreative:
-		return "Write in flowing prose. Prioritize clarity and engagement over length."
+		return "Write in <flowing_content> sections with clear narrative structure. Prioritize clarity and engagement. Use compelling openings and strong conclusions."
 	case domainAnalysis:
 		if info.isQuestion {
-			return "Answer directly and concisely. Use at least one specific example or evidence to ground each key point. If any part of the answer is uncertain, say so explicitly."
+			return "Provide <direct_answer> followed by <supporting_evidence>. Use specific examples to ground each key point. Flag any uncertain claims explicitly."
 		}
-		return "Use structured prose with evidence for each point. Include a brief summary at the end. Note any areas where information is limited or confidence is low."
+		return "Structure your analysis in <key_findings>, <evidence>, and <summary> sections. Support each claim with concrete examples. Note areas where information is limited."
 	default:
-		return "Be concise and direct. Omit preamble. If any aspect of the request is unclear, state your assumption before proceeding."
+		return "Be concise and direct in clearly labeled sections. State any assumptions upfront before proceeding with your response."
 	}
 }

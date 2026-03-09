@@ -1,4 +1,4 @@
-module github.com/better-prompter/better-prompter
+module github.com/promptcraft/promptcraft
 
 go 1.25
 
