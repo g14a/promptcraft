@@ -356,7 +356,7 @@ func render(info promptInfo) string {
 	if b.Len() > 0 {
 		b.WriteString("\n\n")
 	}
-	b.WriteString("<instructions>\n")
+	b.WriteString("<instructions>")
 	writeInstructions(&b, info)
 	b.WriteString("\n</instructions>")
 
@@ -364,14 +364,14 @@ func render(info promptInfo) string {
 	if len(info.constraints) > 0 {
 		b.WriteString("\n\n<constraints>")
 		for _, c := range info.constraints {
-			fmt.Fprintf(&b, "\n- %s", c)
+			fmt.Fprintf(&b, "\n  - %s", c)
 		}
 		b.WriteString("\n</constraints>")
 	}
 
 	// Output format — always include.
 	b.WriteString("\n\n")
-	fmt.Fprintf(&b, "<output_format>%s</output_format>", inferOutputFormat(info))
+	fmt.Fprintf(&b, "<output_format>\n  %s\n</output_format>", inferOutputFormat(info))
 
 	return b.String()
 }
@@ -398,40 +398,36 @@ func inferRole(info promptInfo) string {
 func writeInstructions(b *strings.Builder, info promptInfo) {
 	switch info.domain {
 	case domainCode:
-		fmt.Fprintf(b, "%s\n\n", info.original)
+		fmt.Fprintf(b, "\n  %s\n\n  Approach:\n", info.original)
 		if info.isBuildTask {
-			b.WriteString("Approach:\n")
-			b.WriteString("1. Before writing any code: identify ambiguities, missing requirements, and external dependencies — state them explicitly\n")
-			b.WriteString("2. Define core data structures and interfaces\n")
-			b.WriteString("3. Design the solution architecture\n")
-			b.WriteString("4. Implement each component with clear separation of concerns\n")
-			b.WriteString("5. Handle errors explicitly and cover edge cases throughout")
+			b.WriteString("  1. Before writing any code: identify ambiguities, missing requirements, and external dependencies — state them explicitly\n")
+			b.WriteString("  2. Define core data structures and interfaces\n")
+			b.WriteString("  3. Design the solution architecture\n")
+			b.WriteString("  4. Implement each component with clear separation of concerns\n")
+			b.WriteString("  5. Handle errors explicitly and cover edge cases throughout")
 		} else {
-			b.WriteString("Approach:\n")
-			b.WriteString("1. Think through the problem first — state your hypothesis about the root cause before touching any code\n")
-			b.WriteString("2. Read and understand the relevant code\n")
-			b.WriteString("3. Confirm the root cause, then implement the minimal correct fix\n")
-			b.WriteString("4. Verify edge cases are handled and no regressions introduced")
+			b.WriteString("  1. Think through the problem first — state your hypothesis about the root cause before touching any code\n")
+			b.WriteString("  2. Read and understand the relevant code\n")
+			b.WriteString("  3. Confirm the root cause, then implement the minimal correct fix\n")
+			b.WriteString("  4. Verify edge cases are handled and no regressions introduced")
 		}
 
 	case domainCreative:
-		fmt.Fprintf(b, "%s\n\n", info.original)
-		b.WriteString("Guidelines:\n")
-		b.WriteString("1. Open with a compelling hook — avoid generic introductions\n")
-		b.WriteString("2. Develop each point with specific, concrete details\n")
-		b.WriteString("3. Maintain a consistent tone throughout\n")
-		b.WriteString("4. Close with a clear takeaway or call to action")
+		fmt.Fprintf(b, "\n  %s\n\n  Guidelines:\n", info.original)
+		b.WriteString("  1. Open with a compelling hook — avoid generic introductions\n")
+		b.WriteString("  2. Develop each point with specific, concrete details\n")
+		b.WriteString("  3. Maintain a consistent tone throughout\n")
+		b.WriteString("  4. Close with a clear takeaway or call to action")
 
 	case domainAnalysis:
-		fmt.Fprintf(b, "%s\n\n", info.original)
-		b.WriteString("Structure your response to:\n")
-		b.WriteString("1. State the key answer or conclusion directly upfront\n")
-		b.WriteString("2. Support each point with a specific example, data point, or evidence\n")
-		b.WriteString("3. For any claim you cannot support with evidence, omit it or flag it as uncertain\n")
-		b.WriteString("4. Acknowledge important nuances, trade-offs, or caveats")
+		fmt.Fprintf(b, "\n  %s\n\n  Structure your response to:\n", info.original)
+		b.WriteString("  1. State the key answer or conclusion directly upfront\n")
+		b.WriteString("  2. Support each point with a specific example, data point, or evidence\n")
+		b.WriteString("  3. For any claim you cannot support with evidence, omit it or flag it as uncertain\n")
+		b.WriteString("  4. Acknowledge important nuances, trade-offs, or caveats")
 
 	default:
-		b.WriteString(info.original)
+		fmt.Fprintf(b, "\n  %s", info.original)
 	}
 }
 

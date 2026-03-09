@@ -396,7 +396,7 @@ func TestEnhance(t *testing.T) {
 			// Build task: "implement" verb → constructive framing
 			name:     "code build: implement scraper",
 			prompt:   "implement a financial news scraper in Go",
-			mustHave: []string{"<role>", "Design", "Clarify requirements", "design decisions"},
+			mustHave: []string{"<role>", "Design", "ambiguities", "design decisions"},
 			mustNot:  []string{"root cause"},
 		},
 		{
