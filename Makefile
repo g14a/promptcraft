@@ -16,9 +16,9 @@ test:
 clean:
 	rm -f $(BINARY)
 
-install: build
-	cp $(BINARY) /usr/local/bin/$(BINARY)
-	@echo "Installed to /usr/local/bin/$(BINARY)"
+install:
+	go install -ldflags="-s -w -X main.version=$(VERSION)" ./cmd/better-prompter
+	@echo "Installed to $$(go env GOPATH)/bin/$(BINARY)"
 
 # Quick smoke-test: send an initialize request and check the response.
 smoke: build
