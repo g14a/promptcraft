@@ -352,7 +352,7 @@ Reads prompt from stdin, writes XML to stdout. Exits immediately. Useful for she
 
 ## Installation
 
-**Prerequisites:** Go 1.21+
+**Prerequisites:** Any Recent Go installation should be fine.
 
 ```bash
 # Install binary to $GOPATH/bin (typically ~/go/bin)
@@ -370,34 +370,6 @@ make install   # go install with version ldflags
 make test      # go test -race ./...
 make smoke     # quick MCP initialize round-trip test
 ```
-
----
-
-## Project Structure
-
-```
-promptcraft/
-├── cmd/
-│   └── promptcraft/
-│       └── main.go              # Entry point: MCP server or --enhance CLI
-├── internal/
-│   ├── mcp/
-│   │   ├── server.go            # JSON-RPC 2.0 stdio server
-│   │   ├── server_test.go       # MCP protocol integration tests
-│   │   └── types.go             # Request/Response/Tool schema types
-│   └── prompter/
-│       ├── enhancer.go          # NLP pipeline: analyze + render
-│       └── enhancer_test.go     # Unit tests for domain classification + Enhance()
-├── .claude/
-│   ├── hooks/
-│   │   └── enhance-prompt.sh    # UserPromptSubmit hook
-│   └── settings.json            # Hook registration (project-level)
-├── Makefile
-├── go.mod
-└── README.md
-```
-
----
 
 ## Dependencies
 
@@ -423,20 +395,6 @@ This is a rule-based system. It is fast, private, and free to run, but it cannot
 - Adapt to novel prompt structures not covered by the lexicons
 
 For comparison: Anthropic's Workbench prompt generator uses a Claude model call to produce semantically aware enhancements. `promptcraft` achieves roughly 40-50% of that quality using only local NLP, with zero API cost and sub-50ms latency.
-
----
-
-## Development
-
-```bash
-make build    # compile binary
-make vet      # go vet ./...
-make test     # go test -race ./... (includes NLP + MCP protocol tests)
-make smoke    # send initialize request, verify JSON response
-make clean    # remove compiled binary
-```
-
-Adding new domains or constraints: edit the lexicon maps and `buildConstraints()` / `inferOutputFormat()` / `writeInstructions()` in `internal/prompter/enhancer.go`. All logic is pure functions with no global state — easy to test in isolation.
 
 ---
 
