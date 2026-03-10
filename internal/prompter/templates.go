@@ -98,7 +98,7 @@ const (
 	constraintStructuredData   = "Provide complete data for all requested fields when information is available"
 	constraintStructuredLabels = "Use clear, descriptive labels for any categories or classifications"
 
-	// Code build constraints
+	// Code build constraints.
 	constraintCodeAssumptions  = "State all assumptions about unspecified requirements upfront, before writing code"
 	constraintCodeDependencies = "List the external libraries, APIs, or services the implementation will use"
 	constraintCodeInterfaces   = "Define clear interfaces and data structures before implementation details"
@@ -106,7 +106,7 @@ const (
 	constraintCodeErrors       = "Handle error conditions explicitly with appropriate error messages"
 	constraintCodeComplete     = "Provide complete, working code without placeholder TODOs or incomplete sections"
 
-	// Code modify constraints
+	// Code modify constraints.
 	constraintModifyHypothesis = "State your hypothesis about the root cause before making changes"
 	constraintModifyFocus      = "Focus changes on addressing the specific issue described in the request"
 	constraintModifyInterfaces = "Preserve existing function signatures and public interfaces " +
@@ -114,7 +114,7 @@ const (
 	constraintModifyContext = "Request additional context when the root cause cannot be determined " +
 		"from available information"
 
-	// Creative constraints
+	// Creative constraints.
 	constraintCreativeAudience = "Match tone and voice to the intended audience; " +
 		"state your assumed audience if unspecified"
 	constraintCreativeOpenings = "Use engaging openings that draw the reader in immediately"
