@@ -21,7 +21,6 @@ func New() *Enhancer { return &Enhancer{} }
 // avoids adding token overhead for already-structured inputs.
 const maxEnhanceWords = 300
 
-
 // Enhance transforms prompt into a well-structured XML prompt.
 // intent is optional context about the underlying goal.
 // targetModel is accepted for interface compatibility but has no effect.
@@ -56,17 +55,17 @@ const (
 
 // promptInfo holds NLP-derived facts about the prompt.
 type promptInfo struct {
-	original           string
-	intent             string
-	domain             domain
-	isBuildTask        bool // true = greenfield build; false = modify/fix existing code
-	isQuestion         bool
-	isMultiStep        bool // more than two sentences detected
+	original              string
+	intent                string
+	domain                domain
+	isBuildTask           bool // true = greenfield build; false = modify/fix existing code
+	isQuestion            bool
+	isMultiStep           bool // more than two sentences detected
 	needsStructuredOutput bool // true = benefits from Claude API structured outputs
-	mainVerb           string
-	outputHint         string   // detected output format (json, table, etc.)
-	constraints        []string // domain-specific constraints
-	entities           []string // proper-noun groups to suggest as template variables
+	mainVerb              string
+	outputHint            string   // detected output format (json, table, etc.)
+	constraints           []string // domain-specific constraints
+	entities              []string // proper-noun groups to suggest as template variables
 }
 
 // POS tag prefixes used for classification.
@@ -126,7 +125,6 @@ var (
 		"newsletter", "description", "caption", "pitch", "announcement",
 		"proposal", "report", "tweet", "copy", "content", "headline",
 	)
-
 
 	// Output format keywords → instruction text.
 	outputHints = map[string]string{
@@ -211,7 +209,6 @@ func analyze(prompt, intent string, doc *prose.Document) promptInfo {
 	if info.domain == domainCode {
 		info.isBuildTask = detectBuildTask(verbs, all)
 	}
-
 
 	// Detect output format hints from the raw prompt.
 	lower := strings.ToLower(prompt)

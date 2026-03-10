@@ -328,8 +328,8 @@ func TestRender(t *testing.T) {
 			mustHave: []string{"<context>validate the system</context>"},
 		},
 		{
-			name: "no intent means no context tag",
-			info: promptInfo{domain: domainCode, original: "fix bug"},
+			name:    "no intent means no context tag",
+			info:    promptInfo{domain: domainCode, original: "fix bug"},
 			mustNot: []string{"<context>"},
 		},
 		{
@@ -492,6 +492,338 @@ func TestEnhance(t *testing.T) {
 			}
 		})
 	}
+}
+
+// ---- Entity Constraints Tests ------------------------------------------------
+
+func TestGetEntitySpecificConstraints(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		entities []string
+		want     []string
+	}{
+		{
+			name:     "no entities",
+			entities: []string{},
+			want:     nil,
+		},
+		{
+			name:     "financial entity",
+			entities: []string{"NYSE", "Bloomberg"},
+			want:     []string{constraintFinancial},
+		},
+		{
+			name:     "medical entity",
+			entities: []string{"HIPAA", "patient"},
+			want:     []string{constraintMedical},
+		},
+		{
+			name:     "social media entity",
+			entities: []string{"Twitter", "Instagram"},
+			want:     []string{constraintSocialMedia},
+		},
+		{
+			name:     "cloud entity",
+			entities: []string{"AWS", "Azure"},
+			want:     []string{constraintCloudPlatform},
+		},
+		{
+			name:     "mixed entities",
+			entities: []string{"NYSE", "AWS", "HIPAA"},
+			want:     []string{constraintFinancial, constraintCloudPlatform, constraintMedical},
+		},
+		{
+			name:     "duplicate entity types",
+			entities: []string{"NYSE", "Bloomberg", "Nasdaq"},
+			want:     []string{constraintFinancial}, // only one constraint per type
+		},
+		{
+			name:     "unrecognized entities",
+			entities: []string{"RandomEntity", "Unknown"},
+			want:     nil,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := getEntitySpecificConstraints(tt.entities)
+			if len(got) != len(tt.want) {
+				t.Errorf("getEntitySpecificConstraints() = %v, want %v", got, tt.want)
+				return
+			}
+			for _, constraint := range tt.want {
+				if !contains(got, constraint) {
+					t.Errorf("getEntitySpecificConstraints() missing constraint %q in %v", constraint, got)
+				}
+			}
+		})
+	}
+}
+
+// ---- Specialized Role Tests ------------------------------------------------
+
+func TestGetSpecializedRole(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		prompt   string
+		mainVerb string
+		entities []string
+		domain   domain
+		want     string
+	}{
+		{
+			name:     "non-code domain",
+			prompt:   "debug something",
+			mainVerb: "debug",
+			domain:   domainCreative,
+			want:     "",
+		},
+		{
+			name:     "debug verb",
+			prompt:   "debug authentication",
+			mainVerb: "debug",
+			domain:   domainCode,
+			want:     roleDebugSpecialist,
+		},
+		{
+			name:     "optimize verb",
+			prompt:   "optimize performance",
+			mainVerb: "optimize",
+			domain:   domainCode,
+			want:     rolePerformanceExpert,
+		},
+		{
+			name:     "scraper keyword",
+			prompt:   "create a web scraper",
+			mainVerb: "",
+			domain:   domainCode,
+			want:     roleScrapingSpecialist,
+		},
+		{
+			name:     "api keyword",
+			prompt:   "build rest api",
+			mainVerb: "",
+			domain:   domainCode,
+			want:     roleAPIArchitect,
+		},
+		{
+			name:     "database keyword",
+			prompt:   "design sql database",
+			mainVerb: "",
+			domain:   domainCode,
+			want:     roleDatabaseEngineer,
+		},
+		{
+			name:     "microservice keyword",
+			prompt:   "kubernetes deployment",
+			mainVerb: "",
+			domain:   domainCode,
+			want:     roleDistributedSystems,
+		},
+		{
+			name:     "financial entity",
+			prompt:   "build trading system",
+			mainVerb: "",
+			entities: []string{"NYSE"},
+			domain:   domainCode,
+			want:     roleFintechEngineer,
+		},
+		{
+			name:     "medical entity",
+			prompt:   "patient management",
+			mainVerb: "",
+			entities: []string{"HIPAA"},
+			domain:   domainCode,
+			want:     roleHealthcareEngineer,
+		},
+		{
+			name:     "cloud entity",
+			prompt:   "deploy to cloud",
+			mainVerb: "",
+			entities: []string{"AWS"},
+			domain:   domainCode,
+			want:     roleCloudArchitect,
+		},
+		{
+			name:     "no specialization",
+			prompt:   "simple task",
+			mainVerb: "",
+			domain:   domainCode,
+			want:     "",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := getSpecializedRole(tt.prompt, tt.mainVerb, tt.entities, tt.domain)
+			if got != tt.want {
+				t.Errorf("getSpecializedRole() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// ---- Verb Guidance Tests ---------------------------------------------------
+
+func TestGetVerbSpecificGuidance(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		prompt   string
+		mainVerb string
+		domain   domain
+		want     string
+	}{
+		{
+			name:     "non-code domain",
+			prompt:   "scrape data",
+			mainVerb: "scrape",
+			domain:   domainCreative,
+			want:     "",
+		},
+		{
+			name:     "scrape verb",
+			prompt:   "scrape website",
+			mainVerb: "scrape",
+			domain:   domainCode,
+			want:     verbGuidanceScrape,
+		},
+		{
+			name:     "debug verb",
+			prompt:   "debug issue",
+			mainVerb: "debug",
+			domain:   domainCode,
+			want:     verbGuidanceDebug,
+		},
+		{
+			name:     "fallback from prompt",
+			prompt:   "Scrape the website for data",
+			mainVerb: "", // empty main verb
+			domain:   domainCode,
+			want:     verbGuidanceScrape,
+		},
+		{
+			name:     "fallback troubleshoot",
+			prompt:   "Troubleshoot the authentication",
+			mainVerb: "",
+			domain:   domainCode,
+			want:     verbGuidanceDebug,
+		},
+		{
+			name:     "fallback optimize",
+			prompt:   "Optimize database performance",
+			mainVerb: "",
+			domain:   domainCode,
+			want:     verbGuidanceOptimize,
+		},
+		{
+			name:     "no guidance",
+			prompt:   "implement feature",
+			mainVerb: "implement",
+			domain:   domainCode,
+			want:     "",
+		},
+		{
+			name:     "no fallback match",
+			prompt:   "build something simple",
+			mainVerb: "",
+			domain:   domainCode,
+			want:     "",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := getVerbSpecificGuidance(tt.prompt, tt.mainVerb, tt.domain)
+			if got != tt.want {
+				t.Errorf("getVerbSpecificGuidance() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// ---- Entity Detection Tests ------------------------------------------------
+
+func TestEntityDetection(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name     string
+		testFunc func(string) bool
+		entity   string
+		want     bool
+	}{
+		{"financial NYSE", isFinancialEntity, "nyse", true},
+		{"financial random", isFinancialEntity, "random", false},
+		{"medical HIPAA", isMedicalEntity, "hipaa", true},
+		{"medical random", isMedicalEntity, "random", false},
+		{"social Twitter", isSocialMediaEntity, "twitter", true},
+		{"social random", isSocialMediaEntity, "random", false},
+		{"cloud AWS", isCloudPlatformEntity, "aws", true},
+		{"cloud random", isCloudPlatformEntity, "random", false},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := tc.testFunc(tc.entity)
+			if got != tc.want {
+				t.Errorf("%s(%q) = %v, want %v", tc.name, tc.entity, got, tc.want)
+			}
+		})
+	}
+}
+
+// ---- Verb Extraction Tests ------------------------------------------------
+
+func TestExtractVerbFromPrompt(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		prompt string
+		want   string
+	}{
+		{"first word scrape", "Scrape the website", "scrape"},
+		{"second word debug", "Please debug the issue", "debug"},
+		{"third word optimize", "Can you optimize performance", "optimize"},
+		{"no verb match", "implement a solution", ""},
+		{"empty prompt", "", ""},
+		{"beyond third word", "I need help to debug", ""},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := extractVerbFromPrompt(tt.prompt)
+			if got != tt.want {
+				t.Errorf("extractVerbFromPrompt(%q) = %q, want %q", tt.prompt, got, tt.want)
+			}
+		})
+	}
+}
+
+// Helper function for slice contains
+func contains(slice []string, item string) bool {
+	for _, s := range slice {
+		if s == item {
+			return true
+		}
+	}
+	return false
 }
 
 // ---- Fuzz -------------------------------------------------------------------

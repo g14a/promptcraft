@@ -468,3 +468,32 @@ func BenchmarkHandleToolCallParallel(b *testing.B) {
 		}
 	})
 }
+
+// ---- Additional Error Conditions -------------------------------------------
+
+func TestHandleToolCallMissingArguments(t *testing.T) {
+	srv, _ := newTestServer(&mockEnhancer{})
+
+	params, _ := json.Marshal(ToolCallParams{
+		Name:      "enhance_prompt",
+		Arguments: map[string]any{}, // missing required prompt
+	})
+
+	buf := send(t, srv, Request{
+		JSONRPC: "2.0",
+		ID:      rawID(100),
+		Method:  "tools/call",
+		Params:  params,
+	})
+
+	resp := decodeResp(t, buf)
+	rb, _ := json.Marshal(resp.Result)
+	var result ToolCallResult
+	if err := json.Unmarshal(rb, &result); err != nil {
+		t.Fatalf("decode ToolCallResult: %v", err)
+	}
+
+	if !result.IsError {
+		t.Error("IsError = false; want true for missing prompt argument")
+	}
+}
