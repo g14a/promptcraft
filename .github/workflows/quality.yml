@@ -19,11 +19,11 @@ jobs:
       with:
         go-version: '1.25'
 
-    - name: golangci-lint
-      uses: golangci/golangci-lint-action@v3
-      with:
-        version: latest
-        args: --timeout=5m
+    - name: Install golangci-lint
+      run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+
+    - name: Run golangci-lint
+      run: golangci-lint run --out-format=colored-line-number --timeout=5m
 
   format:
     name: Check Formatting
@@ -103,4 +103,6 @@ jobs:
         sudo mv misspell /usr/local/bin/
 
     - name: Run misspell
-      run: misspell -error .
+      run: |
+        # Skip .golangci.yml as it contains valid linter names that may be flagged as misspellings
+        misspell -error $(find . -type f -name "*.go" -o -name "*.md" -o -name "*.yml" -o -name "*.yaml" | grep -v .golangci.yml)

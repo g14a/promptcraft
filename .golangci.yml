@@ -5,6 +5,7 @@ run:
 
 output:
   sort-results: true
+  format: colored-line-number
 
 linters:
   enable:

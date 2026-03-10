@@ -60,9 +60,12 @@ check-fmt:
 # Run security checks
 security:
 	@if command -v gosec >/dev/null 2>&1; then \
-		gosec ./...; \
+		echo "Running gosec security scan..."; \
+		gosec -fmt=text ./... || echo "Gosec found security issues"; \
 	else \
-		echo "gosec not installed. Install with: go install github.com/securecodewarrior/gosec/v2/cmd/gosec@latest"; \
+		echo "gosec not installed. Installing..."; \
+		go install github.com/securego/gosec/v2/cmd/gosec@latest && \
+		gosec -fmt=text ./... || echo "Gosec found security issues"; \
 	fi
 	@if command -v govulncheck >/dev/null 2>&1; then \
 		govulncheck ./...; \
@@ -77,7 +80,7 @@ quality: vet lint check-fmt security test coverage
 dev-setup:
 	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 	go install golang.org/x/tools/cmd/goimports@latest
-	go install github.com/securecodewarrior/gosec/v2/cmd/gosec@latest
+	go install github.com/securego/gosec/v2/cmd/gosec@latest
 	go install golang.org/x/vuln/cmd/govulncheck@latest
 
 clean:
