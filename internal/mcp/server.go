@@ -1,3 +1,5 @@
+// Package mcp implements a Model Context Protocol server for prompt enhancement.
+// It provides JSON-RPC 2.0 communication over stdio for Claude MCP integration.
 package mcp
 
 import (
@@ -184,13 +186,15 @@ func tools() []Tool {
 						Description: "The raw prompt text to enhance",
 					},
 					"intent": {
-						Type:        "string",
-						Description: "Optional: the underlying goal or intent behind the prompt — helps produce a more targeted enhancement",
+						Type: "string",
+						Description: "Optional: the underlying goal or intent behind the prompt — " +
+							"helps produce a more targeted enhancement",
 					},
 					"target_model": {
-						Type:        "string",
-						Description: "Optional: target Claude model tier for the enhanced prompt (opus, sonnet, haiku). Defaults to the server's configured model.",
-						Enum:        []string{"opus", "sonnet", "haiku"},
+						Type: "string",
+						Description: "Optional: target Claude model tier for the enhanced prompt " +
+							"(opus, sonnet, haiku). Defaults to the server's configured model.",
+						Enum: []string{"opus", "sonnet", "haiku"},
 					},
 				},
 				Required: []string{"prompt"},

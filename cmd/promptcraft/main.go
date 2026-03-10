@@ -32,7 +32,10 @@ func main() {
 			fmt.Fprintf(os.Stderr, "enhance error: %v\n", err)
 			os.Exit(1)
 		}
-		fmt.Print(xml)
+		if _, err := fmt.Fprint(os.Stdout, xml); err != nil {
+			fmt.Fprintf(os.Stderr, "output error: %v\n", err)
+			os.Exit(1)
+		}
 		return
 	}
 

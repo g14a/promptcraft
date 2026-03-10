@@ -92,8 +92,8 @@ var (
 		"design", "rewrite", "edit", "proofread",
 	)
 	analysisVerbs = strset(
-		"explain", "analyze", "analyse", "compare", "evaluate", "assess",
-		"review", "summarize", "summarise", "describe", "define",
+		"explain", "analyze", "compare", "evaluate", "assess",
+		"review", "summarize", "describe", "define",
 		"contrast", "discuss", "outline", "list",
 	)
 
@@ -142,7 +142,7 @@ var (
 		"summary":  outputFormatSummary,
 	}
 
-	// Structured output indicators - suggest Claude API structured outputs
+	// Structured output indicators - suggest Claude API structured outputs.
 	structuredOutputKeywords = strset(
 		"schema", "extract", "parse", "structure", "format", "classify",
 		"categorize", "organize", "fields", "properties", "validate",
@@ -495,9 +495,10 @@ func getBaseConstraints(info promptInfo) []string {
 			constraintAnalysisUncertainty,
 			constraintAnalysisLimitations,
 		}
-	default:
+	case domainGeneral:
 		return nil
 	}
+	return nil
 }
 
 // --- Rendering ---------------------------------------------------------------
@@ -544,7 +545,8 @@ func render(info promptInfo) string {
 
 func inferRole(info promptInfo) string {
 	// Check for verb-specific specialized roles first
-	if specializedRole := getSpecializedRole(info.original, info.mainVerb, info.entities, info.domain); specializedRole != "" {
+	specializedRole := getSpecializedRole(info.original, info.mainVerb, info.entities, info.domain)
+	if specializedRole != "" {
 		return specializedRole
 	}
 
@@ -565,9 +567,10 @@ func inferRole(info promptInfo) string {
 			return "" // no persona needed for direct explanatory questions
 		}
 		return roleAnalysis
-	default:
+	case domainGeneral:
 		return ""
 	}
+	return ""
 }
 
 func getSpecializedRole(prompt, mainVerb string, entities []string, domain domain) string {
@@ -629,13 +632,15 @@ func writeInstructions(b *strings.Builder, info promptInfo) {
 	case domainCode:
 		fmt.Fprintf(b, "\n  %s\n\n  Approach:\n", info.original)
 		if info.isBuildTask {
-			b.WriteString("  1. Before writing any code: identify ambiguities, missing requirements, and external dependencies — state them explicitly\n")
+			b.WriteString("  1. Before writing any code: identify ambiguities, missing requirements, " +
+				"and external dependencies — state them explicitly\n")
 			b.WriteString("  2. Define core data structures and interfaces\n")
 			b.WriteString("  3. Design the solution architecture\n")
 			b.WriteString("  4. Implement each component with clear separation of concerns\n")
 			b.WriteString("  5. Handle errors explicitly and cover edge cases throughout")
 		} else {
-			b.WriteString("  1. Think through the problem first — state your hypothesis about the root cause before touching any code\n")
+			b.WriteString("  1. Think through the problem first — state your hypothesis about the " +
+				"root cause before touching any code\n")
 			b.WriteString("  2. Read and understand the relevant code\n")
 			b.WriteString("  3. Confirm the root cause, then implement the minimal correct fix\n")
 			b.WriteString("  4. Verify edge cases are handled and no regressions introduced")
@@ -655,7 +660,7 @@ func writeInstructions(b *strings.Builder, info promptInfo) {
 		b.WriteString("  3. For any claim you cannot support with evidence, omit it or flag it as uncertain\n")
 		b.WriteString("  4. Acknowledge important nuances, trade-offs, or caveats")
 
-	default:
+	case domainGeneral:
 		fmt.Fprintf(b, "\n  %s", info.original)
 	}
 }
@@ -723,7 +728,7 @@ func extractVerbFromPrompt(prompt string) string {
 		"deploy": "deploy", "test": "test", "authenticate": "authenticate", "authorize": "authorize",
 	}
 
-	for _, word := range words[:min(3, len(words))] { // check first 3 words
+	for _, word := range words[:minInt(3, len(words))] { // check first 3 words
 		if verb, ok := verbMap[word]; ok {
 			return verb
 		}
@@ -731,7 +736,7 @@ func extractVerbFromPrompt(prompt string) string {
 	return ""
 }
 
-func min(a, b int) int {
+func minInt(a, b int) int {
 	if a < b {
 		return a
 	}
@@ -758,7 +763,8 @@ func getBaseOutputFormat(info promptInfo) string {
 			return outputFormatAnalysisQuestion
 		}
 		return outputFormatAnalysisGeneral
-	default:
+	case domainGeneral:
 		return outputFormatGeneral
 	}
+	return outputFormatGeneral
 }
