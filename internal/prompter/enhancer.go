@@ -185,7 +185,8 @@ func analyze(prompt, intent string, doc *prose.Document) promptInfo {
 	// Also accumulate all lowercased tokens for POS-tag-independent fallback
 	// scoring — prose/v2 frequently mis-tags capitalised sentence-opening
 	// imperative verbs (e.g. "Implement" → NNP).
-	var verbs, nouns, all []string
+	var verbs, nouns []string
+	all := make([]string, 0, len(tokens)) // pre-allocate for performance
 	for _, tok := range tokens {
 		lower := strings.ToLower(tok.Text)
 		all = append(all, lower)
